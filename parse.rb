@@ -73,7 +73,8 @@ class Title
   end
 
   def tags
-    categories + citizenship
+    # categories + citizenship
+    citizenship
   end
 
   def categories
@@ -318,8 +319,6 @@ end
 
 show_warnings = true
 
-total_stats = {}
-total_warnings = []
 
 def print_warnings(warnings)
   warnings
@@ -353,14 +352,16 @@ puts "Total categories: #{all_categories.size}"
 puts "Total examples: #{total_examples}"
 puts
 
-Dir.glob('in/*.rtf') do |in_filepath|
+
+def cache_stale?(input, cache)
+  !File.exists?(cache) || File.mtime(input) >= File.mtime(cache)
+end
+
+in_filepaths = Dir.glob('in/*.rtf')
+in_txt_filepaths = in_filepaths.map do |in_filepath|
   basename = File.basename in_filepath, '.*'
   in_txt_filepath = 'int/' + basename + '.txt'
-  out_txt_filepath = 'out/' + basename + '.txt'
-  out_txt_invalid_filepath = 'out/' + basename + '_invalid.txt'
-  out_txt_categories_filepath = 'out/' + basename + '_categories.txt'
-  puts "Processing #{in_filepath}"
-  unless File.exists?(in_txt_filepath) && File.mtime(in_filepath) < File.mtime(in_txt_filepath)
+  if cache_stale?(in_filepath, in_txt_filepath)
     cmd = [
       "unrtf --html '#{in_filepath}'",
       "sed 's/<br>/<p>/g'",
@@ -369,43 +370,49 @@ Dir.glob('in/*.rtf') do |in_filepath|
     puts "Converting #{in_filepath} to #{in_txt_filepath}"
     File.write(in_txt_filepath, IO.popen(cmd).read)
   end
-
-  titles = Titles.new(classifier)
-  File.open(in_txt_filepath).each do |line|
-    titles.parse_line line
-  end
-
-  warnings = []
-  File.open(out_txt_invalid_filepath, 'w') do |out_invalid_file|
-    File.open(out_txt_categories_filepath, 'w') do |out_categories_file|
-      File.open(out_txt_filepath, 'w') do |out_file|
-        titles.each do |title|
-          out_categories_file.puts title.object
-          out_categories_file.puts title.categories.join('; ')
-          out_categories_file.puts
-          out_file.puts title.record_str
-          out_file.puts
-          next if title.valid?
-          if show_warnings
-            out_invalid_file.puts title.full_str
-            out_invalid_file.puts title.warnings
-            out_invalid_file.puts
-          end
-          warnings.push(*title.warnings)
-        end
-      end
-    end
-  end
-
-  total_warnings.push(*warnings)
-  print_warnings(warnings)
-
-  stats = titles.stats
-  total_stats.merge!(stats) { |t, v1, v2| v1 + v2 }
-  print_stats(stats)
-  puts
+  in_txt_filepath
 end
 
-puts "Totals:"
-print_warnings(total_warnings)
-print_stats(total_stats)
+in_merged_txt_filepath = 'int/records.txt'
+merged_is_stale = in_txt_filepaths.any? do |in_txt_filepath|
+  cache_stale?(in_txt_filepath, in_merged_txt_filepath)
+end
+
+if merged_is_stale
+  args = in_txt_filepaths.map{ |p| "'#{p}'" }.join(' ')
+  system("cat #{args} > #{in_merged_txt_filepath}")
+end
+
+out_txt_filepath = 'out/records.txt'
+out_txt_invalid_filepath = 'out/records_invalid.txt'
+# out_txt_categories_filepath = 'out/records_categories.txt'
+titles = Titles.new(classifier)
+File.open(in_merged_txt_filepath).each do |line|
+  titles.parse_line line
+end
+
+warnings = []
+out_invalid_file = File.open(out_txt_invalid_filepath, 'w')
+# out_categories_file = File.open(out_txt_categories_filepath, 'w')
+out_file = File.open(out_txt_filepath, 'w')
+
+titles.each do |title|
+  # out_categories_file.puts title.object
+  # out_categories_file.puts title.categories.join('; ')
+  # out_categories_file.puts
+  out_file.puts title.record_str
+  out_file.puts
+  next if title.valid?
+  if show_warnings
+    out_invalid_file.puts title.full_str
+    out_invalid_file.puts title.warnings
+    out_invalid_file.puts
+  end
+  warnings.push(*title.warnings)
+end
+
+print_warnings(warnings)
+
+stats = titles.stats
+print_stats(stats)
+puts
