@@ -1,3 +1,12 @@
+GIT
+  remote: https://github.com/alexandru/stuff-classifier.git
+  revision: 23bce7ed6780930c7e50c801c4f6e6a3be12a02f
+  specs:
+    stuff-classifier (0.5)
+      redis
+      ruby-stemmer
+      sequel
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -7,9 +16,13 @@ GEM
       minitest (~> 5.1)
       thread_safe (~> 0.3, >= 0.3.4)
       tzinfo (~> 1.1)
+    bayes_motel (0.1.0)
     i18n (0.7.0)
     json (1.8.3)
     minitest (5.7.0)
+    redis (3.2.1)
+    ruby-stemmer (0.9.6)
+    sequel (4.23.0)
     thread_safe (0.3.5)
     tzinfo (1.2.2)
       thread_safe (~> 0.1)
@@ -19,6 +32,8 @@ PLATFORMS
 
 DEPENDENCIES
   activesupport
+  bayes_motel
+  stuff-classifier!
 
 BUNDLED WITH
    1.10.3

@@ -6,6 +6,8 @@ require 'bundler/setup'
 require 'active_support'
 require 'active_support/core_ext'
 
+require 'stuff-classifier'
+
 require 'set'
 
 
@@ -54,9 +56,10 @@ class Title
   end
 
 
-  attr_reader :lines
+  attr_reader :lines, :classifier
 
-  def initialize
+  def initialize(classifier)
+    @classifier = classifier
     @lines = []
   end
 
@@ -70,7 +73,13 @@ class Title
   end
 
   def tags
-    citizenship
+    categories + citizenship
+  end
+
+  def categories
+    object.try{ |object|
+      [classifier.classify(object).to_s]
+    } || []
   end
 
   CODE_REGEX = /ргиа .*? $/xi
@@ -249,8 +258,7 @@ class Title
   end
 
   def record_str_debug
-    [:title, :subject, :citizenship, :author, :author_name, :author_patronymic,
-     :author_surname, :author_initials, :object].map do |field|
+    [:object, :categories].map do |field|
       value = send field
       next if value.nil?
       [field.to_s.ljust(12), value].join(': ')
@@ -266,9 +274,10 @@ class Titles
   include Enumerable
   extend Forwardable
   def_delegators :@titles, :each, :to_a
-  attr_reader :titles
+  attr_reader :titles, :classifier
 
-  def initialize
+  def initialize(classifier)
+    @classifier = classifier
     @titles = []
     @current_title = nil
   end
@@ -282,7 +291,7 @@ class Titles
   end
 
   def current_title
-    @current_title ||= Title.new.tap { |t| @titles.push(t) }
+    @current_title ||= Title.new(classifier).tap { |t| @titles.push(t) }
   end
 
   def parse_line(line)
@@ -322,10 +331,34 @@ def print_stats(stats)
   stats.each { |t, v| puts [t, v].join(': ') }
 end
 
+classifier = StuffClassifier::Bayes.new('titles', :language => 'ru')
+classifier.tokenizer.preprocessing_regexps = []
+classifier.tokenizer.ignore_words = []
+all_categories = Set.new
+total_examples = 0
+Dir.glob('in_classifier/*.txt') do |in_filepath|
+  puts "Training in_filepath"
+  File.read(in_filepath).split("\n\n").each do |entry|
+    total_examples += 1
+    str, categories_str = *entry.split("\n")
+    categories = categories_str.split(',~').map(&:strip).reject(&:blank?)
+    categories.each do |category|
+      classifier.train(category.to_sym, str)
+    end
+    all_categories.merge categories
+  end
+end
+
+puts "Total categories: #{all_categories.size}"
+puts "Total examples: #{total_examples}"
+puts
+
 Dir.glob('in/*.rtf') do |in_filepath|
   basename = File.basename in_filepath, '.*'
   in_txt_filepath = 'int/' + basename + '.txt'
   out_txt_filepath = 'out/' + basename + '.txt'
+  out_txt_invalid_filepath = 'out/' + basename + '_invalid.txt'
+  out_txt_categories_filepath = 'out/' + basename + '_categories.txt'
   puts "Processing #{in_filepath}"
   unless File.exists?(in_txt_filepath) && File.mtime(in_filepath) < File.mtime(in_txt_filepath)
     cmd = [
@@ -337,25 +370,30 @@ Dir.glob('in/*.rtf') do |in_filepath|
     File.write(in_txt_filepath, IO.popen(cmd).read)
   end
 
-  titles = Titles.new
+  titles = Titles.new(classifier)
   File.open(in_txt_filepath).each do |line|
     titles.parse_line line
   end
 
   warnings = []
-  File.open(out_txt_filepath, 'w') do |out_file|
-    titles.each do |title|
-      out_file.puts title.full_str
-      out_file.puts title.record_str
-      out_file.puts
-      next if title.valid?
-      if show_warnings
-        puts title.full_str
-        # puts title.record_str
-        puts title.warnings
-        puts
+  File.open(out_txt_invalid_filepath, 'w') do |out_invalid_file|
+    File.open(out_txt_categories_filepath, 'w') do |out_categories_file|
+      File.open(out_txt_filepath, 'w') do |out_file|
+        titles.each do |title|
+          out_categories_file.puts title.object
+          out_categories_file.puts title.categories.join('; ')
+          out_categories_file.puts
+          out_file.puts title.record_str
+          out_file.puts
+          next if title.valid?
+          if show_warnings
+            out_invalid_file.puts title.full_str
+            out_invalid_file.puts title.warnings
+            out_invalid_file.puts
+          end
+          warnings.push(*title.warnings)
+        end
       end
-      warnings.push(*title.warnings)
     end
   end
 
