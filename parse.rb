@@ -274,7 +274,7 @@ class Titles
 
   include Enumerable
   extend Forwardable
-  def_delegators :@titles, :each, :to_a
+  def_delegators :@titles, :each, :to_a, :sample
   attr_reader :titles, :classifier
 
   def initialize(classifier)
@@ -406,17 +406,12 @@ class Parser
 
     out_txt_filepath = 'out/records.txt'
     out_txt_invalid_filepath = 'out/records_invalid.txt'
-    # out_txt_categories_filepath = 'out/records_categories.txt'
 
     warnings = []
     out_invalid_file = File.open(out_txt_invalid_filepath, 'w')
-    # out_categories_file = File.open(out_txt_categories_filepath, 'w')
     out_file = File.open(out_txt_filepath, 'w')
 
     titles.each do |title|
-      # out_categories_file.puts title.object
-      # out_categories_file.puts title.categories.join('; ')
-      # out_categories_file.puts
       out_file.puts title.record_str
       out_file.puts
       next if title.valid?
@@ -429,6 +424,22 @@ class Parser
     end
 
     print_warnings(warnings)
+  end
+
+  def write_classifier_examples(n)
+    out_txt_categories_filepath = 'out/records_categories.txt'
+    File.open(out_txt_categories_filepath, 'w') do |out_file|
+      titles.sample(n).each do |title|
+        next if title.object.blank?
+        out_file.puts title.code
+        out_file.puts
+        out_file.puts title.object
+        out_file.puts
+        out_file.puts
+        out_file.puts #title.categories.join('; ')
+        out_file.puts
+      end
+    end
   end
 
   def print_warnings(warnings)
@@ -447,4 +458,5 @@ end
 parser = Parser.new()
 parser.read_titles
 parser.write_records
+parser.write_classifier_examples(1000)
 parser.print_stats
