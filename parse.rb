@@ -10,6 +10,8 @@ require 'stuff-classifier'
 
 require 'set'
 
+require_relative 'classifier'
+
 
 class Title
 
@@ -56,10 +58,9 @@ class Title
   end
 
 
-  attr_reader :lines, :classifier
+  attr_reader :lines
 
-  def initialize(classifier)
-    @classifier = classifier
+  def initialize
     @lines = []
   end
 
@@ -77,11 +78,7 @@ class Title
     citizenship
   end
 
-  def categories
-    object.try{ |object|
-      [classifier.classify(object).to_s]
-    } || []
-  end
+  attr_accessor :categories
 
   CODE_REGEX = /ргиа .*? $/xi
   def code
@@ -274,13 +271,16 @@ class Titles
 
   include Enumerable
   extend Forwardable
-  def_delegators :@titles, :each, :to_a, :sample
-  attr_reader :titles, :classifier
+  def_delegators :@titles, :each, :to_a, :sample, :size
+  attr_reader :titles
+  attr_reader :classifier_examples, :classifier_categories
 
-  def initialize(classifier)
-    @classifier = classifier
+  def initialize
     @titles = []
     @current_title = nil
+    @classifier_examples = []
+    @current_classifier_example = nil
+    @classifier_categories = Hash.new
   end
 
 
@@ -292,7 +292,7 @@ class Titles
   end
 
   def current_title
-    @current_title ||= Title.new(classifier).tap { |t| @titles.push(t) }
+    @current_title ||= Title.new.tap { |t| @titles.push(t) }
   end
 
   def parse_line(line)
@@ -302,6 +302,40 @@ class Titles
     # next_title if TITLE_START_REGEXP.match(line)
     current_title.parse_line(line)
     next_title if TITLE_END_REGEP.match(line)
+  end
+
+
+  def next_classifier_example
+    @current_classifier_example = nil
+  end
+
+  def current_classifier_example
+    @current_classifier_example ||=
+      ClassifierExample.new(classifier_categories).tap do |t|
+        @classifier_examples.push(t)
+      end
+  end
+  CLASSIFIER_EXAMPLE_START_REGEXP = Regexp.new('^\s*ргиа', Regexp::IGNORECASE)
+
+  def parse_classifier_example_line(line)
+    line.strip!
+    return if line.blank?
+
+    next_classifier_example if CLASSIFIER_EXAMPLE_START_REGEXP.match(line)
+    current_classifier_example.parse_line(line)
+  end
+
+
+  def parse_category_line(line)
+    Category.new(line).tap do |category|
+      classifier_categories[category.number] = category
+    end
+  end
+
+  def classify(classifier)
+    each do |title|
+      classifier.classify(title)
+    end
   end
 
   def invalid_titles
@@ -319,36 +353,13 @@ end
 
 
 
-classifier = StuffClassifier::Bayes.new('titles', :language => 'ru')
-classifier.tokenizer.preprocessing_regexps = []
-classifier.tokenizer.ignore_words = []
-all_categories = Set.new
-total_examples = 0
-Dir.glob('in_classifier/*.txt') do |in_filepath|
-  puts "Training in_filepath"
-  File.read(in_filepath).split("\n\n").each do |entry|
-    total_examples += 1
-    str, categories_str = *entry.split("\n")
-    categories = categories_str.split(',~').map(&:strip).reject(&:blank?)
-    categories.each do |category|
-      classifier.train(category.to_sym, str)
-    end
-    all_categories.merge categories
-  end
-end
-
-puts "Total categories: #{all_categories.size}"
-puts "Total examples: #{total_examples}"
-puts
-
-
 class Parser
 
-  attr_reader :titles
+  attr_reader :titles, :classifier
 
   def initialize
-    classifier = nil
-    @titles = Titles.new(classifier)
+    @classifier = Classifier.new
+    @titles = Titles.new()
   end
 
 
@@ -390,16 +401,72 @@ class Parser
   end
 
 
+  def convert_classifier_examples
+    in_filepath = 'in_classifier/records_categories.rtf'
+    basename = File.basename in_filepath, '.*'
+    in_txt_filepath = 'int/' + basename + '.txt'
+    if cache_stale?(in_filepath, in_txt_filepath)
+      cmd = [
+        "unrtf --html '#{in_filepath}'",
+        "sed 's/<br>/<p>/g'",
+        "pandoc -f html -t plain --no-wrap"
+      ].join(' | ')
+      puts "Converting #{in_filepath} to #{in_txt_filepath}"
+      File.write(in_txt_filepath, IO.popen(cmd).read)
+    end
+    in_txt_filepath
+  end
+
   def in_merged_txt_filepath
     @in_merged_txt_filepath || merge_records
   end
 
 
+  def in_txt_classifier_examples_filepath
+    @in_txt_classifier_examples_filepath ||= convert_classifier_examples
+  end
+
+
   def read_titles
+    puts "Reading titles from #{in_merged_txt_filepath}"
     File.open(in_merged_txt_filepath).each do |line|
       titles.parse_line line
     end
+    puts "Total titles #{titles.size}"
   end
+
+
+  def read_classifier_categories
+    in_filepath = 'in_classifier/categories.txt'
+    puts "Reading classifier categories from #{in_filepath}"
+    File.readlines(in_filepath).each do |line|
+      titles.parse_category_line(line)
+    end
+    puts "Total categories #{titles.classifier_categories.size}"
+  end
+
+
+  def read_classifier_examples
+    puts "Reading classifier examples from #{in_txt_classifier_examples_filepath}"
+    File.open(in_txt_classifier_examples_filepath).each do |line|
+      titles.parse_classifier_example_line line
+    end
+    puts "Total classifier examples #{titles.classifier_examples.size}"
+    with_categories = titles.classifier_examples.select(&:category)
+    puts "Classifier examples with categories #{with_categories.size}"
+  end
+
+
+  def train_classifier
+    classifier.train(titles.classifier_examples)
+  end
+
+
+  def classify
+    puts "Classifying records"
+    titles.classify(classifier)
+  end
+
 
   def write_records
     show_warnings = true
@@ -412,7 +479,7 @@ class Parser
     out_file = File.open(out_txt_filepath, 'w')
 
     titles.each do |title|
-      out_file.puts title.record_str
+      out_file.puts title.record_str_debug
       out_file.puts
       next if title.valid?
       if show_warnings
@@ -454,9 +521,40 @@ class Parser
 end
 
 
+# classifier = Classifier
+#   .new()
+#   .parse_categories()
+
+
+# classifier = StuffClassifier::Bayes.new('titles', :language => 'ru')
+# classifier.tokenizer.preprocessing_regexps = []
+# classifier.tokenizer.ignore_words = []
+# all_categories = Set.new
+# total_examples = 0
+# Dir.glob('in_classifier/*.txt') do |in_filepath|
+#   puts "Training #{in_filepath}"
+#   File.read(in_filepath).split("\n\n").each do |entry|
+#     total_examples += 1
+#     str, categories_str = *entry.split("\n")
+#     categories = categories_str.split(',~').map(&:strip).reject(&:blank?)
+#     categories.each do |category|
+#       classifier.train(category.to_sym, str)
+#     end
+#     all_categories.merge categories
+#   end
+# end
+
+# puts "Total categories: #{all_categories.size}"
+# puts "Total examples: #{total_examples}"
+# puts
+
 
 parser = Parser.new()
+parser.read_classifier_categories
+parser.read_classifier_examples
+parser.train_classifier
 parser.read_titles
+parser.classify
 parser.write_records
-parser.write_classifier_examples(1000)
+# parser.write_classifier_examples(1000)
 parser.print_stats
