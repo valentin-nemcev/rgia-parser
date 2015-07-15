@@ -20,7 +20,9 @@ GEM
     i18n (0.7.0)
     json (1.8.3)
     minitest (5.7.0)
+    parallel (1.6.0)
     redis (3.2.1)
+    ruby-progressbar (1.7.5)
     ruby-stemmer (0.9.6)
     sequel (4.23.0)
     thread_safe (0.3.5)
@@ -33,6 +35,8 @@ PLATFORMS
 DEPENDENCIES
   activesupport
   bayes_motel
+  parallel
+  ruby-progressbar
   stuff-classifier!
 
 BUNDLED WITH

@@ -11,6 +11,10 @@ class Category
     @number = m[:number]
     @title = m[:title]
   end
+
+  def to_s
+    number + ". " + title
+  end
 end
 
 
@@ -23,12 +27,19 @@ class ClassifierExample
     @lines = []
   end
 
+  NUMBER_REGEX = /^(?<number>[\d.]+?)\.?(\s|$)/
   def category_number
-    @category_number ||= @lines.last.strip
+    @category_number ||= @lines.last.strip.try do |line|
+      NUMBER_REGEX.match(line).try{ |m| m[:number] }
+    end
   end
 
   def category
     categories[category_number]
+  end
+
+  def code
+    @code ||= lines[0].strip
   end
 
   def object
@@ -55,12 +66,15 @@ class Classifier
   def train(examples)
     examples.each do |example|
       next if example.category.nil?
-      nbc.train(example.category.number, example.object)
+      nbc.train(example.category, example.object)
     end
   end
 
   def classify(title)
-    title.categories = [nbc.classify(title.object)] unless title.object.nil?
+    length = nbc.tokenizer.each_word(title.object).length
+    title.category_scores = nbc.cat_scores(title.object).map do |cat, score|
+      [cat, score * length]
+    end
   end
 
 end

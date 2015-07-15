@@ -8,6 +8,9 @@ require 'active_support/core_ext'
 
 require 'stuff-classifier'
 
+require 'parallel'
+require 'ruby-progressbar'
+
 require 'set'
 
 require_relative 'classifier'
@@ -78,7 +81,44 @@ class Title
     citizenship
   end
 
-  attr_accessor :categories
+  def category=(cat)
+    @category = cat
+  end
+
+  def category
+    @category || categories.first
+  end
+
+  def categories
+    category_scores.map(&:second)
+  end
+
+  def category_scores
+    @category_scores || []
+  end
+
+  def category_scores=(scores)
+    @category_scores = scores.take(3).map do |category, score|
+      [Math.log(score), category]
+    end
+  end
+
+
+  def category_best_score
+    category_scores.first[0]
+  end
+
+
+  def confidence_score
+    scores = category_scores.take(2).map(&:first)
+    scores.first - scores.last
+  end
+
+
+  def needs_classification?
+    @category.nil? && object.present?
+  end
+
 
   CODE_REGEX = /ргиа .*? $/xi
   def code
@@ -184,7 +224,7 @@ class Title
 
 
   def object
-    parsed_title[:object]
+    parsed_title[:object].try{ |t| t.gsub(/s+/, ' ')}
   end
 
 
@@ -255,8 +295,14 @@ class Title
     end.join(FIELD_SEPARATOR) + FIELD_SEPARATOR
   end
 
+  def categories_dbg
+    "\n" + category_scores.map do |score, category|
+      [score.round(4), category.to_s].join(' ')
+    end.join("\n")
+  end
+
   def record_str_debug
-    [:object, :categories].map do |field|
+    [:object, :categories_dbg].map do |field|
       value = send field
       next if value.nil?
       [field.to_s.ljust(12), value].join(': ')
@@ -281,6 +327,11 @@ class Titles
     @classifier_examples = []
     @current_classifier_example = nil
     @classifier_categories = Hash.new
+  end
+
+  def [](code)
+    @titles_hash ||= Hash[titles.map{ |t| [t.code, t]}]
+    @titles_hash[code]
   end
 
 
@@ -333,13 +384,29 @@ class Titles
   end
 
   def classify(classifier)
-    each do |title|
-      classifier.classify(title)
+    classifier_examples.each do |example|
+      title = self[example.code]
+      if title.nil?
+        puts "Unknown example: #{example.code}"
+      else
+        title.category = example.category
+      end
     end
+    classified = Parallel.map(titles, :progress => "Classifying") do |title|
+      classifier.classify(title) if title.needs_classification?
+      title
+    end
+    titles.replace classified
   end
 
   def invalid_titles
     titles.reject(&:valid?)
+  end
+
+  def with_worst_category_scores(n)
+    titles
+    .select(&:needs_classification?)
+    .sort_by(&:confidence_score).first(n)
   end
 
   def stats
@@ -386,51 +453,60 @@ class Parser
   end
 
 
-  def merge_records
-    @in_merged_txt_filepath = 'int/records.txt'
-    merged_is_stale = in_txt_filepaths.any? do |in_txt_filepath|
-      cache_stale?(in_txt_filepath, @in_merged_txt_filepath)
+  def merge_files(in_filepaths, merged_filepath)
+    merged_is_stale = in_filepaths.any? do |in_txt_filepath|
+      cache_stale?(in_txt_filepath, merged_filepath)
     end
 
     if merged_is_stale
-      args = in_txt_filepaths.map{ |p| "'#{p}'" }.join(' ')
-      system("cat #{args} > #{@in_merged_txt_filepath}")
+      puts "Merging #{merged_filepath}"
+      args = in_filepaths.map{ |p| "'#{p}'" }.join(' ')
+      system("cat #{args} > #{merged_filepath}")
     end
 
-    @in_merged_txt_filepath
+    merged_filepath
   end
 
 
   def convert_classifier_examples
-    in_filepath = 'in_classifier/records_categories.rtf'
-    basename = File.basename in_filepath, '.*'
-    in_txt_filepath = 'int/' + basename + '.txt'
-    if cache_stale?(in_filepath, in_txt_filepath)
-      cmd = [
-        "unrtf --html '#{in_filepath}'",
-        "sed 's/<br>/<p>/g'",
-        "pandoc -f html -t plain --no-wrap"
-      ].join(' | ')
-      puts "Converting #{in_filepath} to #{in_txt_filepath}"
-      File.write(in_txt_filepath, IO.popen(cmd).read)
+    Dir.glob('in_classifier/examples*.rtf').map do |in_filepath|
+      basename = File.basename in_filepath, '.*'
+      in_txt_filepath = 'int/' + basename + '.txt'
+      if cache_stale?(in_filepath, in_txt_filepath)
+        cmd = [
+          "unrtf --html '#{in_filepath}'",
+          "sed 's/<br>/<p>/g'",
+          "pandoc -f html -t plain --no-wrap"
+        ].join(' | ')
+        puts "Converting #{in_filepath} to #{in_txt_filepath}"
+        File.write(in_txt_filepath, IO.popen(cmd).read)
+      end
+      in_txt_filepath
     end
-    in_txt_filepath
   end
+
 
   def in_merged_txt_filepath
-    @in_merged_txt_filepath || merge_records
+    @in_merged_txt_filepath ||= merge_files(in_txt_filepaths, 'int/records.txt')
   end
 
 
-  def in_txt_classifier_examples_filepath
-    @in_txt_classifier_examples_filepath ||= convert_classifier_examples
+  def in_txt_classifier_examples_filepaths
+    @in_txt_classifier_examples_filepaths ||= convert_classifier_examples
   end
 
 
-  def read_titles
+  def in_merged_classifier_examples_filepath
+    @in_merged_classifier_examples_filepath ||=
+      merge_files(in_txt_classifier_examples_filepaths, 'int/classifier_examples.txt')
+  end
+
+
+  def read_titles(limit=nil)
     puts "Reading titles from #{in_merged_txt_filepath}"
     File.open(in_merged_txt_filepath).each do |line|
       titles.parse_line line
+      break if limit.present? && titles.size > limit
     end
     puts "Total titles #{titles.size}"
   end
@@ -440,6 +516,7 @@ class Parser
     in_filepath = 'in_classifier/categories.txt'
     puts "Reading classifier categories from #{in_filepath}"
     File.readlines(in_filepath).each do |line|
+      next if line.blank?
       titles.parse_category_line(line)
     end
     puts "Total categories #{titles.classifier_categories.size}"
@@ -447,8 +524,8 @@ class Parser
 
 
   def read_classifier_examples
-    puts "Reading classifier examples from #{in_txt_classifier_examples_filepath}"
-    File.open(in_txt_classifier_examples_filepath).each do |line|
+    puts "Reading classifier examples from #{in_merged_classifier_examples_filepath}"
+    File.open(in_merged_classifier_examples_filepath).each do |line|
       titles.parse_classifier_example_line line
     end
     puts "Total classifier examples #{titles.classifier_examples.size}"
@@ -494,15 +571,13 @@ class Parser
   end
 
   def write_classifier_examples(n)
-    out_txt_categories_filepath = 'out/records_categories.txt'
+    out_txt_categories_filepath = 'out/records_categories_worst.txt'
     File.open(out_txt_categories_filepath, 'w') do |out_file|
-      titles.sample(n).each do |title|
+      titles.with_worst_category_scores(n).each do |title|
         next if title.object.blank?
         out_file.puts title.code
-        out_file.puts
         out_file.puts title.object
-        out_file.puts
-        out_file.puts
+        out_file.puts title.categories.take(2).join("\n")
         out_file.puts #title.categories.join('; ')
         out_file.puts
       end
@@ -521,40 +596,12 @@ class Parser
 end
 
 
-# classifier = Classifier
-#   .new()
-#   .parse_categories()
-
-
-# classifier = StuffClassifier::Bayes.new('titles', :language => 'ru')
-# classifier.tokenizer.preprocessing_regexps = []
-# classifier.tokenizer.ignore_words = []
-# all_categories = Set.new
-# total_examples = 0
-# Dir.glob('in_classifier/*.txt') do |in_filepath|
-#   puts "Training #{in_filepath}"
-#   File.read(in_filepath).split("\n\n").each do |entry|
-#     total_examples += 1
-#     str, categories_str = *entry.split("\n")
-#     categories = categories_str.split(',~').map(&:strip).reject(&:blank?)
-#     categories.each do |category|
-#       classifier.train(category.to_sym, str)
-#     end
-#     all_categories.merge categories
-#   end
-# end
-
-# puts "Total categories: #{all_categories.size}"
-# puts "Total examples: #{total_examples}"
-# puts
-
-
 parser = Parser.new()
 parser.read_classifier_categories
 parser.read_classifier_examples
 parser.train_classifier
-parser.read_titles
+parser.read_titles()
 parser.classify
 parser.write_records
-# parser.write_classifier_examples(1000)
+parser.write_classifier_examples(3000)
 parser.print_stats
