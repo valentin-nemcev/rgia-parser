@@ -105,7 +105,7 @@ class Title
   end
 
 
-  CODE_REGEX = /ргиа .*? $/xi
+  CODE_REGEX = /^(ргиа\.?\s*)?ф\.?\s*\d+ .*? $/xi
   def code
     CODE_REGEX.match(full_str) do |m|
       return m[0].sub(/[\s.]*$/, '')
@@ -144,7 +144,7 @@ class Title
 
 
   CERT_NUM_PARENS_REGEX = /
-    \(\s* привилегия .*? (\d+) \)[\s.]*
+    \(\s* (?:привилегия|патент) .*? (\d+) \)[\s.]*
   /xi
 
   def cert_num_parens
@@ -213,29 +213,50 @@ class Title
   end
 
 
-  PARSED_TITLE_REGEX = /
-    ^
-    дело\sо\sвыдаче\sпривилегии\s
-    (?<subject>.*?)
-    \s(?:на|для)\s
-    (?<object>.*?)
-    $
-  /xi
-
-  def parsed_title
-    PARSED_TITLE_REGEX.match(title) || {}
+  def duration
+    if parsed_title.respond_to?(:names) && parsed_title.names.include?('duration')
+      parsed_title[:duration].try{ |t| t.strip }
+    else
+      nil
+    end
   end
 
 
-  TITLE_REGEX = /(дело\sо\sвыдаче.*?)$/i
+  PARSED_TITLE_REGEXES = [
+    /
+      ^
+      дело\sо\sвыдаче\s
+      (привилегии\s)?
+      (?<duration>на\s\d+\s(год|года|лет)\s)?
+      (привилегии\s)?
+      (?<subject>.*?)
+      \s(?:на|для)\s
+      (?<object>.*?)
+      $
+    /xi,
+    /
+      ^
+      по\sходатайству\s
+      (?<subject>.*?)
+      \s(?:о)\s
+      (?<object>.*?)
+      $
+    /xi,
+  ]
+
+  def parsed_title
+    PARSED_TITLE_REGEXES.each do |regex|
+      m = regex.match(title)
+      return m if m.present?
+    end
+    return {}
+  end
+
 
   def title
-    TITLE_REGEX.match(full_str) do |m|
-      title = m[1]
-      title
-        .sub(CERT_NUM_PARENS_REGEX, '')
-        .sub(/[\s.]*$/, '')
-    end
+    lines.first
+      .sub(CERT_NUM_PARENS_REGEX, '')
+      .sub(/[\s.]*$/, '')
   end
 
 
@@ -256,7 +277,7 @@ class Title
   end
 
   def validate_parsed_title
-    warn "Can't parse title" if parsed_title.size == 0
+    warn "Can't parse title" if title.present? &&title.present? && parsed_title.size == 0
   end
 
 
@@ -295,7 +316,7 @@ class Title
   end
 
   def to_spec
-    spec_fields = FIELDS.keys - [:notes] + [:subject, :object]
+    spec_fields = FIELDS.keys - [:notes] + [:subject, :object, :duration]
     {
       :input => full_str,
       :output => Hash[spec_fields.map{ |field| [field, send(field)] } ]
@@ -328,8 +349,7 @@ class Titles
   end
 
 
-  TITLE_START_REGEXP = Regexp.new('^дело', Regexp::IGNORECASE)
-  TITLE_END_REGEP = Regexp.new('^\s*ргиа', Regexp::IGNORECASE)
+  TITLE_END_REGEP = Title::CODE_REGEX
 
   def next_title
     @current_title = nil
@@ -343,7 +363,6 @@ class Titles
     line.strip!
     return if line.blank?
 
-    # next_title if TITLE_START_REGEXP.match(line)
     current_title.parse_line(line)
     next_title if TITLE_END_REGEP.match(line)
   end

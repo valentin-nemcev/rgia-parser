@@ -199,12 +199,29 @@ class Parser
   def print_stats
     titles.stats.each { |t, v| puts [t, v].join(': ') }
   end
+
+  def print_title_stats
+    without_title = titles.invalid_titles.select do |t|
+      t.warnings.include? "Missing title"
+    end
+
+    titles = without_title.map do |title|
+      title.lines.first[/^((\p{Alpha}{,2}\s+)?\p{Alpha}+)/, 1]
+    end
+    count = titles.each_with_object(Hash.new(0)) { |t, c| c[t] += 1}
+
+    count.to_a.sort_by(&:second).reverse
+      .each { |t, v| puts [t, v].join(': ') }
+  end
 end
 
 
 spec_titles = [
   "РГИА. Ф. 24. Оп. 6. Д. 1368",
-  "РГИА. Ф. 24. Оп. 8. Д. 1523"
+  "РГИА. Ф. 24. Оп. 8. Д. 1523",
+  "РГИА. Ф. 24. Оп. 5. Д. 453",
+  "РГИА. Ф. 24. Оп. 7. Д. 236",
+  "РГИА. Ф. 24. Оп. 4. Д. 552",
 ]
 
 parser = Parser.new()
@@ -214,6 +231,7 @@ parser = Parser.new()
 parser.read_titles()
 parser.write_specs(spec_titles)
 # parser.classify
-# parser.write_records
+parser.write_records
+# parser.print_title_stats
 # parser.write_classifier_examples(3000)
 parser.print_stats
