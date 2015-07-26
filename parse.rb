@@ -149,11 +149,14 @@ class Parser
     show_warnings = true
 
     out_txt_filepath = 'out/records.txt'
+    out_yml_filepath = 'out/records.yml'
     out_txt_invalid_filepath = 'out/records_invalid.txt'
 
     warnings = []
     out_invalid_file = File.open(out_txt_invalid_filepath, 'w')
     out_file = File.open(out_txt_filepath, 'w')
+
+    File.write(out_yml_filepath, titles.map(&:to_spec).to_yaml)
 
     titles.each do |title|
       out_file.puts title.record_str_debug
@@ -213,6 +216,55 @@ class Parser
     count.to_a.sort_by(&:second).reverse
       .each { |t, v| puts [t, v].join(': ') }
   end
+
+  def print_company_stats
+    with_company = titles.invalid_titles.select do |t|
+      t.warnings.include? "Missing author_surname"
+    end
+
+
+    words = with_company.flat_map do |title|
+      title.subject.try{ |s| s.split(/[^\p{Alpha}]/)} || []
+    end
+
+    stemmer = Lingua::Stemmer.new(:language => "ru")
+    count = words
+      .select{ |w| w.length > 3 }
+      .map { |w| stemmer.stem(Unicode.downcase(w)) }
+      .each_with_object(Hash.new(0)) { |w, c| c[w] += 1}
+
+    count.to_a.sort_by(&:second).reverse.take(50)
+      .each { |t, v| puts [t, v].join(': ') }
+  end
+
+  def print_author_stats
+    count = titles.each_with_object(Hash.new(0)) do |title, c|
+      stat = (title.company_name.blank? ? '' : 'C') + title.authors.size.to_s
+      c[stat] += 1
+    end
+
+    count.to_a.sort_by(&:second).reverse.take(50)
+      .each { |t, v| puts [t, v].join(': ') }
+  end
+
+
+  def print_citizenship_stats
+    without_citizenship = titles.invalid_titles.select do |t|
+      t.warnings.include? "Unknown citizenship"
+    end
+    count = without_citizenship.each_with_object(Hash.new(0)) do |title, c|
+      m = /(?<citizenship>\p{Alpha}+)\s+поддан/.match(title.subject)
+      stemmer = Lingua::Stemmer.new(:language => "ru")
+      if m.present?
+        c[stemmer.stem(m[:citizenship])] += 1
+      else
+        c['unknown'] += 1
+      end
+    end
+
+    count.to_a.sort_by(&:second).reverse.take(50)
+      .each { |t, v| puts [t, v].join(': ') }
+  end
 end
 
 
@@ -222,16 +274,21 @@ spec_titles = [
   "РГИА. Ф. 24. Оп. 5. Д. 453",
   "РГИА. Ф. 24. Оп. 7. Д. 236",
   "РГИА. Ф. 24. Оп. 4. Д. 552",
+  "РГИА. Ф. 24. Оп. 5. Д. 885",
+  "РГИА. Ф. 24. Оп. 14. Д. 770",
 ]
 
 parser = Parser.new()
-# parser.read_classifier_categories
-# parser.read_classifier_examples
-# parser.train_classifier
+parser.read_classifier_categories
+parser.read_classifier_examples
+parser.train_classifier
 parser.read_titles()
 parser.write_specs(spec_titles)
-# parser.classify
+parser.classify
 parser.write_records
+parser.print_citizenship_stats
+parser.print_author_stats
+# parser.print_company_stats
 # parser.print_title_stats
 # parser.write_classifier_examples(3000)
 parser.print_stats

@@ -1,6 +1,10 @@
 require 'active_support'
 require 'active_support/core_ext'
 
+require 'lingua/stemmer'
+require 'unicode'
+
+
 class Title
 
   def warnings
@@ -35,11 +39,6 @@ class Title
     :tags_str           , 'Классификаторы',
   ]
 
-
-  REQUIRED_FIELDS =
-    [:title, :code].to_set
-  # REQUIRED_FIELDS =
-  #   [:author_name, :author_surname, :title, :end_year, :code].to_set
 
   FIELDS.keys.map do |field|
     attr_reader field
@@ -162,49 +161,119 @@ class Title
   def author_initials
     [author_name, author_patronymic]
       .compact.map { |name| name[0, 1].upcase + '.' }
-      .join(' ').tap { |initials| initials.blank? ? nil : initials }
+      .join(' ').tap { |initials| return initials.blank? ? nil : initials }
   end
 
   def author_name
-    parsed_author[:name]
+    (authors.first || {})[:name]
   end
 
   def author_patronymic
-    parsed_author[:patronymic]
+    (authors.first || {})[:patronymic]
   end
 
   def author_surname
-    parsed_author[:surname]
+    (authors.first || {})[:surname]
   end
 
 
   PARSED_AUTHOR_REGEX = /
-    ^
-    (?<surname>\p{Lu}\p{Ll}+)
-    \s+
     (?<name>\p{Lu}[\p{Ll}.]+)?
     \s*
     (?<patronymic>\p{Lu}[\p{Ll}.]+)?
-    $
+    \s*
+    (?<surname>\p{Lu}\p{Ll}+)
+    \s*
+    (?<name>\p{Lu}[\p{Ll}.]+)?
+    \s*
+    (?<patronymic>\p{Lu}[\p{Ll}.]+)?
   /x
-  def parsed_author
-    PARSED_AUTHOR_REGEX.match(subject) || {}
+  def authors
+    return [] if subject.blank?
+    subject.to_enum(:scan, PARSED_AUTHOR_REGEX).map do
+      match = Regexp.last_match
+      result = {}
+      result[:surname] = match[:surname]
+      result[:name] = match[:name]
+      result[:patronymic] = match[:patronymic]
+      if result[:name].nil?
+        result[:name] = result[:patronymic]
+        result[:patronymic] = nil
+      end
+      if result[:name].blank?
+        nil
+      else
+        result
+      end
+    end.compact
   end
 
 
+  COMPANY_REGEXES = %w{
+    обществ
+    акционерн
+    фирм
+    завод
+    компан
+    товариществ
+    торгов
+    дом
+    фабрик
+  }.map { |company| Regexp.new(company, Regexp::IGNORECASE) }
 
-  CITIZENSHIP_REGEXP = /\s*(иностран\p{Alpha}+)\s+/i
-  def citizenship
-    CITIZENSHIP_REGEXP.match(parsed_title[:subject]) do |m|
-      return ['Иностранец']
+
+
+  def company_name
+    COMPANY_REGEXES.each do |regex|
+      return subject if regex.match(subject)
     end
-    return ['Российский подданный']
+    nil
+  end
+
+
+  countries = [
+    'Великобританский подданный',
+    'Французский подданный',
+    'Германский подданный',
+    'Австро-венгерский подданный',
+    'Швейцарский подданный',
+    'Итальянский подданный',
+    'Испанский подданный',
+    'Подданный США',
+    'Прусский подданный',
+    'Австрийский подданный',
+    'Русский подданный',
+    'Шведский подданный',
+    'Саксонский подданный',
+    'Бельгийский подданный',
+  ].map do |citizenship|
+    key = citizenship.sub(/\s*подданный\s*/i, '')
+    key = Lingua.stemmer(key, :language => :ru)
+    key = Unicode::downcase(key)
+    [Regexp.new(key, Regexp::IGNORECASE), citizenship]
+  end
+
+  COUNTRIES = Hash[countries]
+
+  CITIZENSHIP_REGEXP = /\s*(поддан\p{Alpha}+)\s+/i
+  FOREIGNER_REGEXP = /\s*(иностран\p{Alpha}+)\s+/i
+  def citizenship
+    subject = parsed_title[:subject]
+    return nil if subject.blank?
+    CITIZENSHIP_REGEXP.match(subject) do |m|
+      COUNTRIES.each do |regexp, value|
+        return value if regexp.match(subject)
+      end
+    return nil
+    end
+    FOREIGNER_REGEXP.match(subject) do |m|
+      return 'Иностранец'
+    end
+    return 'Российский подданный'
   end
 
   def subject
-    parsed_title[:subject].try do |subject|
-      subject.sub(CITIZENSHIP_REGEXP, '')
-    end
+    parsed_title[:subject]
   end
 
 
@@ -269,6 +338,19 @@ class Title
     validate_required_fields_present
     validate_line_count
     validate_parsed_title
+    validate_authors
+    validate_citizenship
+  end
+
+
+  def validate_authors
+    warn "No authors parsed" if authors.empty? && company_name.blank?
+    warn "Suspicious author count" if authors.count > 3
+  end
+
+
+  def validate_citizenship
+    warn "Unknown citizenship" if citizenship.blank?
   end
 
 
@@ -280,6 +362,11 @@ class Title
     warn "Can't parse title" if title.present? &&title.present? && parsed_title.size == 0
   end
 
+
+  REQUIRED_FIELDS =
+    [:title, :code].to_set
+  # REQUIRED_FIELDS =
+  #   [:author_name, :author_surname, :title, :end_year, :code].to_set
 
   def validate_required_fields_present
     REQUIRED_FIELDS.each do |field|
@@ -308,18 +395,32 @@ class Title
   end
 
   def record_str_debug
-    [:object, :categories_dbg].map do |field|
+    [:subject, :author_name, :author_patronymic, :author_surname, :citizenship].map do |field|
       value = send field
       next if value.nil?
       [field.to_s.ljust(12), value].join(': ')
     end.compact.join("\n")
   end
 
+  SPEC_FIELDS = %i{
+    code
+    title
+    cert_num
+    date_range
+    end_year
+    object
+    subject
+    duration
+    company_name
+    authors
+    citizenship
+    category
+  }
+
   def to_spec
-    spec_fields = FIELDS.keys - [:notes] + [:subject, :object, :duration]
     {
       :input => full_str,
-      :output => Hash[spec_fields.map{ |field| [field, send(field)] } ]
+      :output => Hash[SPEC_FIELDS.map{ |field| [field, send(field)] } ]
     }
   end
 

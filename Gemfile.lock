@@ -21,6 +21,7 @@ GEM
     json (1.8.3)
     minitest (5.7.0)
     parallel (1.6.0)
+    petrovich (0.2.1)
     redis (3.2.1)
     ruby-progressbar (1.7.5)
     ruby-stemmer (0.9.6)
@@ -28,6 +29,7 @@ GEM
     thread_safe (0.3.5)
     tzinfo (1.2.2)
       thread_safe (~> 0.1)
+    unicode (0.4.4.2)
 
 PLATFORMS
   ruby
@@ -36,8 +38,10 @@ DEPENDENCIES
   activesupport
   bayes_motel
   parallel
+  petrovich
   ruby-progressbar
   stuff-classifier!
+  unicode
 
 BUNDLED WITH
    1.10.3
