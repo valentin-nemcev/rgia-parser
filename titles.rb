@@ -1,17 +1,22 @@
 require 'active_support'
 require 'active_support/core_ext'
 
+require 'memoist'
+
 require 'lingua/stemmer'
 require 'unicode'
 
 
 class Title
 
+  extend Memoist
+
   def warnings
     @warnings = []
     validate
     @warnings
   end
+  memoize :warnings
 
   def warn(msg)
     @warnings << msg
@@ -59,11 +64,13 @@ class Title
   def tags_str
     tags.join(TAG_SEPARATOR)
   end
+  memoize :tags_str
 
   def tags
     # categories + citizenship
     citizenship
   end
+  memoize :tags
 
   def category=(cat)
     @category = cat
@@ -76,6 +83,7 @@ class Title
   def categories
     category_scores.map(&:second)
   end
+  memoize :categories
 
   def category_scores
     @category_scores || []
@@ -97,6 +105,7 @@ class Title
     scores = category_scores.take(2).map(&:first)
     scores.first - scores.last
   end
+  memoize :confidence_score
 
 
   def needs_classification?
@@ -110,6 +119,7 @@ class Title
       return m[0].sub(/[\s.]*$/, '')
     end
   end
+  memoize :code
 
 
   def date_range
@@ -135,6 +145,7 @@ class Title
   def dates
     DATES_REGEX.match(full_str) || {}
   end
+  memoize :dates
 
 
   def cert_num
@@ -151,6 +162,7 @@ class Title
       return m[1]
     end
   end
+  memoize :cert_num_parens
 
 
   def author
@@ -163,6 +175,7 @@ class Title
       .compact.map { |name| name[0, 1].upcase + '.' }
       .join(' ').tap { |initials| return initials.blank? ? nil : initials }
   end
+  memoize :author_initials
 
   def author_name
     (authors.first || {})[:name]
@@ -207,6 +220,7 @@ class Title
       end
     end.compact
   end
+  memoize :authors
 
 
   COMPANY_REGEXES = %w{
@@ -229,6 +243,7 @@ class Title
     end
     nil
   end
+  memoize :company_name
 
 
   countries = [
@@ -271,6 +286,7 @@ class Title
     end
     return 'Российский подданный'
   end
+  memoize :citizenship
 
   def subject
     parsed_title[:subject]
@@ -280,6 +296,7 @@ class Title
   def object
     parsed_title[:object].try{ |t| t.gsub(/s+/, ' ')}
   end
+  memoize :object
 
 
   def duration
@@ -289,6 +306,7 @@ class Title
       nil
     end
   end
+  memoize :duration
 
 
   PARSED_TITLE_REGEXES = [
@@ -320,6 +338,7 @@ class Title
     end
     return {}
   end
+  memoize :parsed_title
 
 
   def title
@@ -327,11 +346,13 @@ class Title
       .sub(CERT_NUM_PARENS_REGEX, '')
       .sub(/[\s.]*$/, '')
   end
+  memoize :title
 
 
   def full_str
     @full_str ||= @lines.join("\n").squeeze(' ')
   end
+  memoize :full_str
 
 
   def validate
@@ -344,7 +365,7 @@ class Title
 
 
   def validate_authors
-    warn "No authors parsed" if authors.empty? && company_name.blank?
+    # warn "No authors parsed" if authors.empty? && company_name.blank?
     warn "Suspicious author count" if authors.count > 3
   end
 
@@ -387,12 +408,14 @@ class Title
       send field
     end.join(FIELD_SEPARATOR) + FIELD_SEPARATOR
   end
+  memoize :record_str
 
   def categories_dbg
     "\n" + category_scores.map do |score, category|
       [score.round(4), category.to_s].join(' ')
     end.join("\n")
   end
+  memoize :categories_dbg
 
   def record_str_debug
     [:subject, :author_name, :author_patronymic, :author_surname, :citizenship].map do |field|
@@ -401,6 +424,7 @@ class Title
       [field.to_s.ljust(12), value].join(': ')
     end.compact.join("\n")
   end
+  memoize :record_str_debug
 
   SPEC_FIELDS = %i{
     code
@@ -423,6 +447,7 @@ class Title
       :output => Hash[SPEC_FIELDS.map{ |field| [field, send(field)] } ]
     }
   end
+  memoize :to_spec
 
 end
 

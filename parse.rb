@@ -276,6 +276,7 @@ spec_titles = [
   "РГИА. Ф. 24. Оп. 4. Д. 552",
   "РГИА. Ф. 24. Оп. 5. Д. 885",
   "РГИА. Ф. 24. Оп. 14. Д. 770",
+  "РГИА. Ф. 24. Оп. 4. Д. 58",
 ]
 
 parser = Parser.new()
@@ -284,9 +285,9 @@ parser.read_classifier_examples
 parser.train_classifier
 parser.read_titles()
 parser.write_specs(spec_titles)
-parser.classify
+# parser.classify
 parser.write_records
-parser.print_citizenship_stats
+# parser.print_citizenship_stats
 parser.print_author_stats
 # parser.print_company_stats
 # parser.print_title_stats
