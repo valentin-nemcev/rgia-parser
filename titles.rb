@@ -23,25 +23,40 @@ class Title
     self
   end
 
-  FIELD_SEPARATOR = ';~ '
-  TAG_SEPARATOR = ',~ '
+  # FIELDS = ActiveSupport::OrderedHash[
+  #   :author_name        , 'Имя автора изобретения',
+  #   :author_patronymic  , 'Отчество автора изобретения',
+  #   :author             , 'Фамилия автора изобретения',
+  #   :author_initials    , 'Инициалы автора изобретения',
+  #   :trustee_name       , 'Имя доверенного лица',
+  #   :trustee_patronymic , 'Отчество доверенного лица',
+  #   :trustee_surname    , 'Фамилия доверенного лица',
+  #   :trustee_initials   , 'Инициалы доверенного лица',
+  #   :title              , 'Заголовок',
+  #   :cert_num           , '№ свидетельства',
+  #   :date_range         , 'Крайние даты',
+  #   :end_year           , 'Дата окончания',
+  #   :code               , 'Архивный шифр',
+  #   :notes              , 'Замечания',
+  #   :tags_str           , 'Классификаторы',
+  # ]
+
 
   FIELDS = ActiveSupport::OrderedHash[
-    :author_name        , 'Имя автора изобретения',
-    :author_patronymic  , 'Отчество автора изобретения',
-    :author             , 'Фамилия автора изобретения',
-    :author_initials    , 'Инициалы автора изобретения',
-    :trustee_name       , 'Имя доверенного лица',
-    :trustee_patronymic , 'Отчество доверенного лица',
-    :trustee_surname    , 'Фамилия доверенного лица',
-    :trustee_initials   , 'Инициалы доверенного лица',
-    :title              , 'Заголовок',
-    :cert_num           , '№ свидетельства',
-    :date_range         , 'Крайние даты',
-    :end_year           , 'Дата окончания',
-    :code               , 'Архивный шифр',
-    :notes              , 'Замечания',
-    :tags_str           , 'Классификаторы',
+    :title        , 'Заголовок'            ,
+    :duration     , 'Длительность'         ,
+    :company_name , 'Имя компании'         ,
+    # :author1      , 'Автор 1'              ,
+    # :author2      , 'Автор 2'              ,
+    # :author3      , 'Автор 3'              ,
+    # :author4      , 'Автор 4'              ,
+    # :author5      , 'Автор 5'              ,
+    :citizenship  , 'Подданство'           ,
+    :category     , 'Отрасль производства' ,
+    :cert_num     , '№ свидетельства'      ,
+    :date_range   , 'Крайние даты'         ,
+    :end_year     , 'Дата окончания'       ,
+    :code         , 'Архивный шифр'        ,
   ]
 
 
@@ -403,12 +418,12 @@ class Title
   end
 
 
-  def record_str
+  def to_row
     FIELDS.keys.map do |field|
       send field
-    end.join(FIELD_SEPARATOR) + FIELD_SEPARATOR
+    end
   end
-  memoize :record_str
+  memoize :to_row
 
   def categories_dbg
     "\n" + category_scores.map do |score, category|
@@ -417,14 +432,6 @@ class Title
   end
   memoize :categories_dbg
 
-  def record_str_debug
-    [:subject, :author_name, :author_patronymic, :author_surname, :citizenship].map do |field|
-      value = send field
-      next if value.nil?
-      [field.to_s.ljust(12), value].join(': ')
-    end.compact.join("\n")
-  end
-  memoize :record_str_debug
 
   SPEC_FIELDS = %i{
     code

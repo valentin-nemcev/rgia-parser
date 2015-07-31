@@ -4,6 +4,7 @@ require 'rubygems'
 require 'bundler/setup'
 
 require 'yaml'
+require 'spreadsheet'
 
 require 'active_support'
 require 'active_support/core_ext'
@@ -145,32 +146,35 @@ class Parser
   end
 
 
-  def write_records
-    show_warnings = true
+  def write_xls
+    book = Spreadsheet::Workbook.new
+    records = book.create_worksheet :name => 'Все записи'
+    records.row(0).replace Title::FIELDS.keys.map(&:to_s)
+    records.row(1).replace Title::FIELDS.values
+    titles.each_with_index do |title, i|
+      records.row(i + 2).replace title.to_row
+    end
+    book.write 'out/records.xls'
+  end
 
-    out_txt_filepath = 'out/records.txt'
+
+  def write_yaml
     out_yml_filepath = 'out/records.yml'
-    out_txt_invalid_filepath = 'out/records_invalid.txt'
-
-    warnings = []
-    out_invalid_file = File.open(out_txt_invalid_filepath, 'w')
-    out_file = File.open(out_txt_filepath, 'w')
-
     File.write(out_yml_filepath, titles.map(&:to_spec).to_yaml)
 
-    titles.each do |title|
-      out_file.puts title.record_str_debug
-      out_file.puts
-      next if title.valid?
-      if show_warnings
-        out_invalid_file.puts title.full_str
-        out_invalid_file.puts title.warnings
-        out_invalid_file.puts
-      end
-      warnings.push(*title.warnings)
-    end
+    # titles.each do |title|
+    #   out_file.puts title.record_str_debug
+    #   out_file.puts
+    #   next if title.valid?
+    #   if show_warnings
+    #     out_invalid_file.puts title.full_str
+    #     out_invalid_file.puts title.warnings
+    #     out_invalid_file.puts
+    #   end
+    #   warnings.push(*title.warnings)
+    # end
 
-    print_warnings(warnings)
+    # print_warnings(warnings)
   end
 
   def write_specs(title_codes)
@@ -286,9 +290,9 @@ parser.train_classifier
 parser.read_titles()
 parser.write_specs(spec_titles)
 # parser.classify
-parser.write_records
+parser.write_xls
 # parser.print_citizenship_stats
-parser.print_author_stats
+# parser.print_author_stats
 # parser.print_company_stats
 # parser.print_title_stats
 # parser.write_classifier_examples(3000)

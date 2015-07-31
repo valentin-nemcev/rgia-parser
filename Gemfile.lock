@@ -24,9 +24,12 @@ GEM
     parallel (1.6.0)
     petrovich (0.2.1)
     redis (3.2.1)
+    ruby-ole (1.2.11.8)
     ruby-progressbar (1.7.5)
     ruby-stemmer (0.9.6)
     sequel (4.23.0)
+    spreadsheet (1.0.4)
+      ruby-ole (>= 1.0)
     thread_safe (0.3.5)
     tzinfo (1.2.2)
       thread_safe (~> 0.1)
@@ -42,6 +45,7 @@ DEPENDENCIES
   parallel
   petrovich
   ruby-progressbar
+  spreadsheet
   stuff-classifier!
   unicode
 
