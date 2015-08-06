@@ -159,34 +159,28 @@ class Parser
 
 
   def write_yaml
-    out_yml_filepath = 'out/records.yml'
-    File.write(out_yml_filepath, titles.map(&:to_spec).to_yaml)
-
-    # titles.each do |title|
-    #   out_file.puts title.record_str_debug
-    #   out_file.puts
-    #   next if title.valid?
-    #   if show_warnings
-    #     out_invalid_file.puts title.full_str
-    #     out_invalid_file.puts title.warnings
-    #     out_invalid_file.puts
-    #   end
-    #   warnings.push(*title.warnings)
-    # end
-
+    File.write('out/records.yml', titles.map(&:to_spec).to_yaml)
     # print_warnings(warnings)
   end
 
+  def write_yaml_by_author_stat
+    titles.group_by(&:author_stat).each do |author_stat, titles|
+      filepath = "out/records_#{author_stat}.yml"
+      puts "Writing #{filepath}"
+      File.write(filepath, titles.map(&:to_spec).to_yaml)
+    end
+  end
+
   def write_specs(title_codes)
-    File.write('out/record_specs.yaml', title_codes.map do |code|
-      titles[code].to_spec
-    end.to_yaml)
+    File.write('out/record_specs.yaml',
+               titles.values_at(*title_codes).map(&:to_spec).to_yaml)
   end
 
   def write_classifier_examples(n)
     out_txt_categories_filepath = 'out/records_categories_worst.txt'
     File.open(out_txt_categories_filepath, 'w') do |out_file|
-      titles.with_worst_category_scores(n).each do |title|
+      # titles.with_worst_category_scores(n).each do |title|
+      titles.select(&:needs_classification?).sample(n).each do |title|
         next if title.object.blank?
         out_file.puts title.code
         out_file.puts title.object
@@ -217,13 +211,12 @@ class Parser
     end
     count = titles.each_with_object(Hash.new(0)) { |t, c| c[t] += 1}
 
-    count.to_a.sort_by(&:second).reverse
-      .each { |t, v| puts [t, v].join(': ') }
+    print_count count
   end
 
   def print_company_stats
-    with_company = titles.invalid_titles.select do |t|
-      t.warnings.include? "Missing author_surname"
+    with_company = titles.select do |t|
+      t.authors.empty?
     end
 
 
@@ -231,33 +224,73 @@ class Parser
       title.subject.try{ |s| s.split(/[^\p{Alpha}]/)} || []
     end
 
+    # words = with_company.map do |title|
+    #   title.subject.try{ |s| s[ /\p{Alpha}{3,}/ ]}
+    # end.compact
+
+
     stemmer = Lingua::Stemmer.new(:language => "ru")
     count = words
       .select{ |w| w.length > 3 }
       .map { |w| stemmer.stem(Unicode.downcase(w)) }
       .each_with_object(Hash.new(0)) { |w, c| c[w] += 1}
 
-    count.to_a.sort_by(&:second).reverse.take(50)
-      .each { |t, v| puts [t, v].join(': ') }
+    print_count count
+  end
+
+
+  def print_subject_stats
+    singles = []
+    pairs = []
+    triples = []
+    stemmer = Lingua::Stemmer.new(:language => "ru")
+    puts 'Fully parsed: ' +
+      titles.map(&:stripped_subject).select(&:blank?).count.to_s
+    puts 'Unparsed without company: ' +
+      titles.select{ |t| t.company_name.blank? && t.stripped_subject.present? }
+        .each{ |t| 
+          # puts t.subject; puts t.stripped_subject 
+        }
+        .count.to_s
+    titles.select{ |t| t.company_name.blank? }.each do |title|
+      words = (title.stripped_subject.try{ |s| s.split(/[^\p{alnum}]/)} || [])
+        .select{ |w| w.length > 1 }
+        .map { |w| stemmer.stem(Unicode.downcase(w)) }
+      # if words.include? 'электрическ'
+      if words.include?('американск')
+        puts title.subject
+      end
+      singles.push(*words)
+      pairs.push(*words.each_cons(2).map{ |c| c.join(' ')})
+      triples.push(*words.each_cons(3).map{ |c| c.join(' ')})
+      # pairs.push(*words.each_cons(2).select{|c| c.include? 'крестьянин'}.map{ |c| c.join(' ')})
+      # triples.push(*words.each_cons(3).select{|c| c.include? 'крестьянин'}.map{ |c| c.join(' ')})
+    end
+
+
+    count = Hash.new(0)
+    singles.each { |w| count[w] += 1}
+    pairs.each { |w| count[w] += 1}
+    triples.each { |w| count[w] += 1}
+
+    print_count count
   end
 
   def print_author_stats
     count = titles.each_with_object(Hash.new(0)) do |title, c|
-      stat = (title.company_name.blank? ? '' : 'C') + title.authors.size.to_s
-      c[stat] += 1
+      c[title.author_stat] += 1
     end
 
-    count.to_a.sort_by(&:second).reverse.take(50)
-      .each { |t, v| puts [t, v].join(': ') }
+    print_count count
   end
 
 
   def print_citizenship_stats
-    without_citizenship = titles.invalid_titles.select do |t|
-      t.warnings.include? "Unknown citizenship"
-    end
-    count = without_citizenship.each_with_object(Hash.new(0)) do |title, c|
-      m = /(?<citizenship>\p{Alpha}+)\s+поддан/.match(title.subject)
+    # without_citizenship = titles.invalid_titles.select do |t|
+    #   t.warnings.include? "Unknown citizenship"
+    # end
+    count = titles.each_with_object(Hash.new(0)) do |title, c|
+      m = /(?<citizenship>[\p{Alpha}-]+)\s+(поддан|гражд)/i.match(title.subject)
       stemmer = Lingua::Stemmer.new(:language => "ru")
       if m.present?
         c[stemmer.stem(m[:citizenship])] += 1
@@ -265,7 +298,10 @@ class Parser
         c['unknown'] += 1
       end
     end
+    print_count count
+  end
 
+  def print_count(count)
     count.to_a.sort_by(&:second).reverse.take(50)
       .each { |t, v| puts [t, v].join(': ') }
   end
@@ -281,6 +317,8 @@ spec_titles = [
   "РГИА. Ф. 24. Оп. 5. Д. 885",
   "РГИА. Ф. 24. Оп. 14. Д. 770",
   "РГИА. Ф. 24. Оп. 4. Д. 58",
+  "РГИА. Ф. 24. Оп. 7. Д. 515",
+  "РГИА. Ф. 24. Оп. 6. Д. 189",
 ]
 
 parser = Parser.new()
@@ -290,9 +328,10 @@ parser.train_classifier
 parser.read_titles()
 parser.write_specs(spec_titles)
 # parser.classify
-parser.write_xls
+# parser.write_xls
 # parser.print_citizenship_stats
-# parser.print_author_stats
+# parser.write_yaml_by_author_stat
+# parser.print_subject_stats
 # parser.print_company_stats
 # parser.print_title_stats
 # parser.write_classifier_examples(3000)

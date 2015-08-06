@@ -7,6 +7,46 @@ require 'lingua/stemmer'
 require 'unicode'
 
 
+class Author
+
+  extend Memoist
+
+  def self.from_match(match)
+    surname = match[:surname]
+    name = match[:name]
+    patronymic = match[:patronymic]
+    if name.nil?
+      name = patronymic
+      patronymic = nil
+    end
+    if name.blank?
+      nil
+    else
+      new(surname, name, patronymic)
+    end
+  end
+
+  attr_reader :surname, :name, :patronymic
+  def initialize(surname, name, patronymic)
+    @surname = surname
+    @name = name
+    @patronymic = patronymic
+  end
+
+  def initials
+    [name, patronymic]
+      .compact.map { |name| name[0, 1].upcase + '.' }
+      .join(' ').tap { |initials| return initials.blank? ? nil : initials }
+  end
+  memoize :initials
+
+  def full_name
+    [surname, name, patronymic].compact.join(' ')
+  end
+
+end
+
+
 class Title
 
   extend Memoist
@@ -46,11 +86,11 @@ class Title
     :title        , 'Заголовок'            ,
     :duration     , 'Длительность'         ,
     :company_name , 'Имя компании'         ,
-    # :author1      , 'Автор 1'              ,
-    # :author2      , 'Автор 2'              ,
-    # :author3      , 'Автор 3'              ,
-    # :author4      , 'Автор 4'              ,
-    # :author5      , 'Автор 5'              ,
+    :author1      , 'Автор 1'              ,
+    :author2      , 'Автор 2'              ,
+    :author3      , 'Автор 3'              ,
+    :author4      , 'Автор 4'              ,
+    :author5      , 'Автор 5'              ,
     :citizenship  , 'Подданство'           ,
     :category     , 'Отрасль производства' ,
     :cert_num     , '№ свидетельства'      ,
@@ -75,17 +115,6 @@ class Title
     @lines << line
   end
 
-
-  def tags_str
-    tags.join(TAG_SEPARATOR)
-  end
-  memoize :tags_str
-
-  def tags
-    # categories + citizenship
-    citizenship
-  end
-  memoize :tags
 
   def category=(cat)
     @category = cat
@@ -180,62 +209,57 @@ class Title
   memoize :cert_num_parens
 
 
-  def author
-    author_surname || subject
+  def author_stat
+    (company_name.blank? ? '' : 'C') + authors.size.to_s
   end
 
 
-  def author_initials
-    [author_name, author_patronymic]
-      .compact.map { |name| name[0, 1].upcase + '.' }
-      .join(' ').tap { |initials| return initials.blank? ? nil : initials }
-  end
-  memoize :author_initials
-
-  def author_name
-    (authors.first || {})[:name]
+  (1..5).each do |i|
+    define_method("author#{i}") do
+      authors[i - 1].try(:full_name)
+    end
   end
 
-  def author_patronymic
-    (authors.first || {})[:patronymic]
+  def authors
+    subject_with_authors[:authors] || []
   end
-
-  def author_surname
-    (authors.first || {})[:surname]
-  end
-
 
   PARSED_AUTHOR_REGEX = /
     (?<name>\p{Lu}[\p{Ll}.]+)?
     \s*
     (?<patronymic>\p{Lu}[\p{Ll}.]+)?
     \s*
-    (?<surname>\p{Lu}\p{Ll}+)
+    (?<surname>
+     (де[\p{Pd}\s]+(л[ая][\p{Pd}\s])?)?
+     (фон[\p{Pd}\s]+(дер[\p{Pd}\s])?)?
+      \p{Lu}[\p{alpha}\p{Pd}]+
+    )
     \s*
     (?<name>\p{Lu}[\p{Ll}.]+)?
     \s*
     (?<patronymic>\p{Lu}[\p{Ll}.]+)?
   /x
-  def authors
-    return [] if subject.blank?
-    subject.to_enum(:scan, PARSED_AUTHOR_REGEX).map do
-      match = Regexp.last_match
-      result = {}
-      result[:surname] = match[:surname]
-      result[:name] = match[:name]
-      result[:patronymic] = match[:patronymic]
-      if result[:name].nil?
-        result[:name] = result[:patronymic]
-        result[:patronymic] = nil
-      end
-      if result[:name].blank?
-        nil
-      else
-        result
-      end
-    end.compact
+  def subject_with_authors
+    return {} if subject_with_props[:subject].blank?
+    subject = subject_with_props[:subject].clone
+
+    authors = subject.to_enum(:scan, PARSED_AUTHOR_REGEX).map do
+      Author.from_match(Regexp.last_match)
+    end.compact.to_a
+
+    authors.each do |author|
+      subject.gsub!(author.surname, '')
+      subject.gsub!(author.name || '', '')
+      subject.gsub!(author.patronymic || '', '')
+    end
+
+    subject.gsub!(',', '')
+    subject.gsub!(/(^|\s)и/, '')
+    subject.gsub!(/\s+/, ' ')
+    subject.strip!
+    {subject: subject, authors: authors}
   end
-  memoize :authors
+  memoize :subject_with_authors
 
 
   COMPANY_REGEXES = %w{
@@ -248,9 +272,9 @@ class Title
     торгов
     дом
     фабрик
-  }.map { |company| Regexp.new(company, Regexp::IGNORECASE) }
-
-
+  }.map do |company|
+    Regexp.new("(?<!\\p{Alpha})#{company}", Regexp::IGNORECASE)
+  end
 
   def company_name
     COMPANY_REGEXES.each do |regex|
@@ -260,6 +284,41 @@ class Title
   end
   memoize :company_name
 
+
+  def citizenship
+    subject_with_props[:citizenship]
+  end
+
+  def occupation
+    subject_with_props[:occupation]
+  end
+
+  def position
+    subject_with_props[:position]
+  end
+
+  def location
+    subject_with_props[:location]
+  end
+
+
+  # прусск: 40
+  # германск: 29
+  # великобританск: 24
+  # французск: 21
+  # австрийск: 20
+  # итальянск: 20
+  # русск: 18
+  # шведск: 15
+  # американск: 13
+  # саксонск: 7
+  # швейцарск: 5
+  # австро-венгерск: 4
+  # бельгийск: 4
+  # рижск: 3
+  # митавск: 2
+  # датск: 2
+  # немецк: 2
 
   countries = [
     'Великобританский подданный',
@@ -280,28 +339,224 @@ class Title
     key = citizenship.sub(/\s*подданный\s*/i, '')
     key = Lingua.stemmer(key, :language => :ru)
     key = Unicode::downcase(key)
-    [Regexp.new(key, Regexp::IGNORECASE), citizenship]
+    regexp = Regexp.new("(?<!\\p{Alpha})#{key}\\p{Alpha}+", Regexp::IGNORECASE)
+    [regexp, citizenship]
   end
 
   COUNTRIES = Hash[countries]
 
-  CITIZENSHIP_REGEXP = /\s*(поддан\p{Alpha}+)\s+/i
-  FOREIGNER_REGEXP = /\s*(иностран\p{Alpha}+)\s+/i
-  def citizenship
-    subject = parsed_title[:subject]
-    return nil if subject.blank?
-    CITIZENSHIP_REGEXP.match(subject) do |m|
-      COUNTRIES.each do |regexp, value|
-        return value if regexp.match(subject)
-      end
-    return nil
-    end
-    FOREIGNER_REGEXP.match(subject) do |m|
-      return 'Иностранец'
-    end
-    return 'Российский подданный'
+  CITIZENSHIP_REGEXP = /(?<!\p{Alpha})(поддан\p{Alpha}+|граждан\p{Alpha}+)/i
+  FOREIGNER_REGEXP = /(?<!\p{Alpha})(иностран\p{Alpha}+)/i
+
+
+  stem_and_join = lambda do |pos|
+    source = pos.split(' ').map do |w|
+      Unicode::downcase(Lingua.stemmer(w, :language => :ru)) + '\\p{alpha}*'
+    end.join(' ')
+    Regexp.new(source, Regexp::IGNORECASE)
   end
-  memoize :citizenship
+
+  occupations = %w{
+    Инженер
+    Механик
+    Технолог
+    Доктор
+    Химик
+    Мастер
+    Электротехник
+    Техник
+    Архитектор
+    Врач
+    Кандидат
+  }.map do |occupation|
+    key = Lingua.stemmer(occupation, :language => :ru)
+    key = Unicode::downcase(key)
+    regexp = Regexp.new("(?<!\\p{Alpha})#{key}\\p{Alpha}*", Regexp::IGNORECASE)
+    [occupation, regexp]
+  end
+
+  multiwords = [
+    'Ветеринарный врач',
+    'Зубной врач',
+
+    'Горный инженер',
+    'Инженер путей сообщения',
+
+    'Оружейный мастер',
+    'Булочный мастер',
+    'Водопроводный мастер',
+    'Жестяных дел мастер',
+    'Коробочных дел мастер',
+    'Кузнечный мастер',
+    'Мастер жестяных дел',
+    'Мастер механического цеха',
+    'Мельничный мастер',
+    'Механических дел мастер',
+    'Мыловаренный мастер',
+    'Ремесленный мастер',
+    'Ткацкий мастер',
+    'Фортепианный мастер',
+    'Цеховой мастер',
+    'Часовых дел мастер',
+    'Экипажных дел мастер',
+
+    'Доктор медицины',
+    'Кандидат естественных наук',
+    'Кандидат законоведения',
+    'Кандидат коммерческих наук',
+    'Кандидат математических наук',
+    'Кандидат прав',
+    'Кандидат университета',
+    'Кандидат физико-математических наук',
+    'Кандидат философии',
+    'Кандидат химии',
+    'Кандидат юридических наук',
+
+  ].map do |o|
+    [o, stem_and_join.call(o)]
+  end
+
+
+  combinations = occupations.permutation(2).map do |o1, o2|
+    occupation = o1.first + '-' + Unicode::downcase(o2.first)
+    regexp = Regexp.new(o1.second.source + '[\\p{Pd}\\s]*' + o2.second.source,
+                        Regexp::IGNORECASE)
+    [occupation, regexp]
+  end
+
+  OCCUPATIONS = Hash[
+    multiwords + combinations + occupations
+  ]
+
+  merchant = [
+    /купц\p{alpha}+ \d[\p{Pd}oй ]* гильдии/i,
+    /(времен\p{alpha}+\s+)?((\d[\p{Pd}oй ]*|первой|второй) гильдии )?купц\p{alpha}+/i,
+  ]
+
+  qualifier = /((отставн|действительн)\p{alpha}+ )?/.source
+  POSITIONS = merchant + [
+    'Князь',
+    'Граф',
+    'Барон',
+    'Дворянин',
+    'Мещанин',
+    'Крестьянин',
+
+    'Потомственный почетный гражданин',
+    'Почетный гражданин',
+  ].map(&stem_and_join) + [
+    'Титулованый советник',
+    'Статский советник',
+    'Коллежский советник',
+    'Военный советник',
+    'Надворный советник',
+    'Коллежский асессор',
+    'Титулярный советник',
+    'Коллежский секретарь',
+    'Губернский секретарь',
+    'Кабинетский регистратор',
+    'Провинциальный секретарь',
+    'Синодский регистратор',
+    'Коллежский регистратор',
+  ].map do |p|
+    Regexp.new(qualifier + stem_and_join.call(p).source, Regexp::IGNORECASE)
+  end + [
+    'Подполковник',
+    'Полковник',
+    'Штабс-ротмистр',
+    'Штабс-капитан',
+    'Унтер-офицер',
+    'Майор',
+    'Капитан',
+    'Лейтенант',
+    'Подпоручик',
+    'Поручик',
+  ].map do |p|
+    Regexp.new(
+      qualifier +
+        '((гвардии|артиллерии) )?(инженер[\\p{Pd}\\sу]*)?' +
+        stem_and_join.call(p).source,
+      Regexp::IGNORECASE)
+  end
+
+  LOCATIONS = [
+    /жител\p{alpha}+ (города|гор.|г.|д.) \p{lu}\p{ll}+/i,
+    /\p{lu}\p{ll}+ губернии/i,
+    /(санкт[ \p{Pd}]*)?петербургск\p{alpha}+/i,
+    /московск\p{alpha}+/i,
+  ]
+
+
+  def subject_with_props
+    return {} if parsed_title[:subject].blank?
+    subject = parsed_title[:subject].clone
+
+
+    occupation = Set.new
+    position = Set.new
+    citizenship = Set.new
+    location = Set.new
+
+    LOCATIONS.each do |regexp|
+      subject.gsub!(regexp) do |m|
+        location.add m
+        ''
+      end
+    end
+
+    POSITIONS.each do |regexp|
+      subject.gsub!(regexp) do |m|
+        position.add m
+        ''
+      end
+    end
+
+    OCCUPATIONS.each do |value, regexp|
+      subject.gsub!(regexp) do |o|
+        occupation.add value
+        ''
+      end
+    end
+
+
+    subject.gsub!(CITIZENSHIP_REGEXP) do |m|
+      citizenship.add :unknown
+      ''
+    end
+
+    COUNTRIES.each do |regexp, value|
+      subject.gsub!(regexp) do |m|
+        citizenship.delete :unknown
+        citizenship.add value
+        ''
+      end
+    end
+
+    subject.gsub!(FOREIGNER_REGEXP) do |m|
+      citizenship.add 'Иностранец'
+      ''
+    end
+
+    if citizenship.empty?
+      citizenship.add 'Российский подданный'
+    end
+
+    subject.strip!
+    subject.gsub!(/\s+/, ' ')
+    {
+      subject: subject,
+      occupation: occupation.to_a,
+      position: position.to_a,
+      location: location.to_a,
+      citizenship: citizenship.to_a
+    }
+  end
+  memoize :subject_with_props
+
+  def stripped_subject
+    subject_with_authors[:subject]
+  end
+
 
   def subject
     parsed_title[:subject]
@@ -315,11 +570,7 @@ class Title
 
 
   def duration
-    if parsed_title.respond_to?(:names) && parsed_title.names.include?('duration')
-      parsed_title[:duration].try{ |t| t.strip }
-    else
-      nil
-    end
+    parsed_title[:duration].try{ |t| t.strip }
   end
   memoize :duration
 
@@ -329,11 +580,15 @@ class Title
       ^
       дело\sо\sвыдаче\s
       (привилегии\s)?
-      (?<duration>на\s\d+\s(год|года|лет)\s)?
+      (?<duration>на\s\d+\s?(год|года|лет)\s)?
       (привилегии\s)?
       (?<subject>.*?)
-      \s(?:на|для)\s
+      \s(?:на|для)\s(?!\d+\s?(год|года|лет)\s)
       (?<object>.*?)
+      (?<subject_company>
+        [,\s]+передан\p{Alpha}+
+        .*?
+      )?
       $
     /xi,
     /
@@ -349,7 +604,10 @@ class Title
   def parsed_title
     PARSED_TITLE_REGEXES.each do |regex|
       m = regex.match(title)
-      return m if m.present?
+      next if m.nil?
+      return Hash[m.names.map{ |name| [name.to_sym, m[name]]}].tap do |h|
+        h[:subject] += h[:subject_company] if h[:subject_company].present?
+      end
     end
     return {}
   end
@@ -441,17 +699,21 @@ class Title
     end_year
     object
     subject
+    stripped_subject
     duration
     company_name
     authors
     citizenship
-    category
+    occupation
+    position
+    location
   }
 
   def to_spec
     {
       :input => full_str,
       :output => Hash[SPEC_FIELDS.map{ |field| [field, send(field)] } ]
+      # :output => Hash[FIELDS.keys.map{ |field| [field, send(field)] } ]
     }
   end
   memoize :to_spec
@@ -465,6 +727,7 @@ class Titles
   include Enumerable
   extend Forwardable
   def_delegators :@titles, :each, :to_a, :sample, :size
+  def_delegators :titles_hash, :[], :values_at
   attr_reader :titles
   attr_reader :classifier_examples, :classifier_categories
 
@@ -476,9 +739,8 @@ class Titles
     @classifier_categories = Hash.new
   end
 
-  def [](code)
+  def titles_hash
     @titles_hash ||= Hash[titles.map{ |t| [t.code, t]}]
-    @titles_hash[code]
   end
 
 
