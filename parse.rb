@@ -135,8 +135,9 @@ class Parser
   end
 
 
-  def train_classifier
-    classifier.train(titles.classifier_examples)
+  def evaluate_classifier
+    puts "Evaluating classifier"
+    titles.evaluate_classifier(Classifier.new)
   end
 
 
@@ -324,9 +325,9 @@ spec_titles = [
 parser = Parser.new()
 parser.read_classifier_categories
 parser.read_classifier_examples
-parser.train_classifier
 parser.read_titles()
-parser.write_specs(spec_titles)
+# parser.write_specs(spec_titles)
+parser.evaluate_classifier
 # parser.classify
 # parser.write_xls
 # parser.print_citizenship_stats
@@ -334,5 +335,5 @@ parser.write_specs(spec_titles)
 # parser.print_subject_stats
 # parser.print_company_stats
 # parser.print_title_stats
-# parser.write_classifier_examples(3000)
+# parser.write_classifier_examples(5000)
 parser.print_stats

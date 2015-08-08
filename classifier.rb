@@ -1,4 +1,3 @@
-
 class Category
   attr_reader :number, :title
 

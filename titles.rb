@@ -7,6 +7,15 @@ require 'lingua/stemmer'
 require 'unicode'
 
 
+class MatchData
+
+  def to_h
+    Hash[names.map(&:to_sym).zip(captures)]
+  end
+
+end
+
+
 class Author
 
   extend Memoist
@@ -121,7 +130,15 @@ class Title
   end
 
   def category
-    @category || categories.first
+    @category || classifier_category
+  end
+
+  def classifier_category
+    categories.first
+  end
+
+  def classified_correctly?
+    @category == classifier_category
   end
 
   def categories
@@ -187,7 +204,7 @@ class Title
     $
   /xui
   def dates
-    DATES_REGEX.match(full_str) || {}
+    DATES_REGEX.match(full_str).to_h
   end
   memoize :dates
 
@@ -605,7 +622,7 @@ class Title
     PARSED_TITLE_REGEXES.each do |regex|
       m = regex.match(title)
       next if m.nil?
-      return Hash[m.names.map{ |name| [name.to_sym, m[name]]}].tap do |h|
+      return m.to_h.tap do |h|
         h[:subject] += h[:subject_company] if h[:subject_company].present?
       end
     end
@@ -790,20 +807,40 @@ class Titles
     end
   end
 
-  def classify(classifier)
-    classifier_examples.each do |example|
+  def classified_titles
+    @classified_titles ||= classifier_examples.map do |example|
       title = self[example.code]
       if title.nil?
         puts "Unknown example: #{example.code}"
       else
         title.category = example.category
       end
-    end
+      title
+    end.compact
+  end
+
+  def classify(classifier)
+    classifier.train(classified_titles)
     classified = Parallel.map(titles, :progress => "Classifying") do |title|
       classifier.classify(title) if title.needs_classification?
       title
     end
     titles.replace classified
+  end
+
+  def evaluate_classifier(classifier)
+    control_ratio = 0.3
+    train, control = classified_titles.partition{ rand > control_ratio }
+    classifier.train(train)
+    control = Parallel.map(control, :progress => "Classifying") do |title|
+      classifier.classify(title)
+      title
+    end
+    correct = control.count(&:classified_correctly?)
+    p correct
+    p control.size
+    correct_p = (correct.to_f/control.size).round(2) * 100
+    puts "Correctly classified records #{correct_p}%"
   end
 
   def invalid_titles
