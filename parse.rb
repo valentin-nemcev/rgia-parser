@@ -147,14 +147,52 @@ class Parser
   end
 
 
-  def write_xls
-    book = Spreadsheet::Workbook.new
-    records = book.create_worksheet :name => 'Все записи'
-    records.row(0).replace Title::FIELDS.keys.map(&:to_s)
-    records.row(1).replace Title::FIELDS.values
+  def auto_width(column)
+    w = column.drop(1).map{ |c| c.try(:length) }.compact.max
+    return if w.nil?
+    column.width = [5, [30, w].min].max
+  end
+
+  def write_titles_xls(titles, worksheet)
+    worksheet.row(0).replace Title::FIELDS.values
     titles.each_with_index do |title, i|
-      records.row(i + 2).replace title.to_row
+      worksheet.row(i + 1).replace title.to_row
     end
+    (0...Title::FIELDS.length).each { |i| auto_width(worksheet.column(i)) }
+  end
+
+  def write_xls
+    puts 'Writing out/records.xls'
+    book = Spreadsheet::Workbook.new
+
+    records = book.create_worksheet :name => 'Все записи'
+    write_titles_xls(titles, records)
+
+    invalid_records = book.create_worksheet :name => 'Проблемные записи'
+    write_titles_xls(titles.invalid_titles, invalid_records)
+
+    categories = book.create_worksheet :name => 'Отрасли производства'
+    categories.row(0).replace ['Номер', 'Отрасль', 'Кол-во записей']
+    titles.categories_stats.each_with_index do |cat_count, i|
+      category, count = cat_count
+      categories.row(i + 1).replace(
+        [category.number, category.title, count]
+      )
+    end
+    auto_width(categories.column(1))
+    authors = book.create_worksheet :name => 'Авторы'
+    authors.row(0).replace ['Кол-во авторов', 'Кол-во записей']
+    author_stats = titles.each_with_object(Hash.new(0)) do |title, c|
+      c[title.author_stat] += 1
+    end
+    author_stats.to_a.sort_by(&:second).reverse
+      .each_with_index do |author_stat, i|
+        author, count = author_stat
+        authors.row(i + 1).replace(
+          [author, count]
+        )
+      end
+    auto_width(authors.column(0))
     book.write 'out/records.xls'
   end
 
@@ -192,7 +230,8 @@ class Parser
     end
   end
 
-  def print_warnings(warnings)
+  def print_warnings
+    warnings = titles.flat_map(&:warnings)
     warnings
       .each_with_object(Hash.new(0)) { |w, h| h[w] += 1 }
       .each { |w, count| puts [w, count].join(': ') }
@@ -250,7 +289,7 @@ class Parser
     puts 'Unparsed without company: ' +
       titles.select{ |t| t.company_name.blank? && t.stripped_subject.present? }
         .each{ |t| 
-          # puts t.subject; puts t.stripped_subject 
+          puts t.subject;
         }
         .count.to_s
     titles.select{ |t| t.company_name.blank? }.each do |title|
@@ -258,9 +297,9 @@ class Parser
         .select{ |w| w.length > 1 }
         .map { |w| stemmer.stem(Unicode.downcase(w)) }
       # if words.include? 'электрическ'
-      if words.include?('американск')
-        puts title.subject
-      end
+      # if words.include?('на') || words.include?('же')
+      #   puts title.subject
+      # end
       singles.push(*words)
       pairs.push(*words.each_cons(2).map{ |c| c.join(' ')})
       triples.push(*words.each_cons(3).map{ |c| c.join(' ')})
@@ -320,20 +359,23 @@ spec_titles = [
   "РГИА. Ф. 24. Оп. 4. Д. 58",
   "РГИА. Ф. 24. Оп. 7. Д. 515",
   "РГИА. Ф. 24. Оп. 6. Д. 189",
+  "РГИА. Ф. 24. Оп. 6. Д. 1016",
 ]
 
 parser = Parser.new()
 parser.read_classifier_categories
 parser.read_classifier_examples
 parser.read_titles()
-# parser.write_specs(spec_titles)
-parser.evaluate_classifier
-# parser.classify
-# parser.write_xls
+# parser.evaluate_classifier
+parser.classify
+parser.write_specs(spec_titles)
+parser.write_xls
+parser.print_warnings
 # parser.print_citizenship_stats
 # parser.write_yaml_by_author_stat
 # parser.print_subject_stats
 # parser.print_company_stats
 # parser.print_title_stats
 # parser.write_classifier_examples(5000)
+parser.print_author_stats
 parser.print_stats

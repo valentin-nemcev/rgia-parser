@@ -1,18 +1,34 @@
 class Category
   attr_reader :number, :title
 
+  def self.nil_category
+    @nil_category ||= new("0", 'Без отрасли')
+  end
+
   CATEGORY_REGEX = /^(?<number>[\d.]+?)\.? (?<title>.*)$/
-  def initialize(line)
+  def self.parse(line)
     line.gsub!(/\s+/, ' ')
     line.gsub!(/^\s*|\s*$/, '')
     line.gsub!(/\.?$/, '')
     m = CATEGORY_REGEX.match(line) or fail "Can't parse category: #{line}"
-    @number = m[:number]
-    @title = m[:title]
+    new(m[:number], m[:title])
+  end
+
+  def initialize(number, title)
+    @number = number
+    @title = title
+  end
+
+  def eql?(other)
+    number == other.number
+  end
+
+  def hash
+    number.hash
   end
 
   def to_s
-    number + ". " + title
+    title
   end
 end
 
@@ -64,7 +80,7 @@ class Classifier
 
   def train(examples)
     examples.each do |example|
-      next if example.category.nil?
+      next if example.category.nil? || example.object.nil?
       nbc.train(example.category, example.object)
     end
   end

@@ -20,10 +20,14 @@ class Author
 
   extend Memoist
 
-  def self.from_match(match)
+  def self.others(match, transfer_target)
+    @others ||= new('другие', nil, nil, transfer_target)
+  end
+
+  def self.from_match(match, transfer_target)
     surname = match[:surname]
-    name = match[:name]
-    patronymic = match[:patronymic]
+    name = match[:nameB] || match[:nameA]
+    patronymic = match[:patronymicB] || match[:patronymicA]
     if name.nil?
       name = patronymic
       patronymic = nil
@@ -31,15 +35,16 @@ class Author
     if name.blank?
       nil
     else
-      new(surname, name, patronymic)
+      new(surname, name, patronymic, transfer_target)
     end
   end
 
-  attr_reader :surname, :name, :patronymic
-  def initialize(surname, name, patronymic)
+  attr_reader :surname, :name, :patronymic, :transfer_target
+  def initialize(surname, name, patronymic, transfer_target)
     @surname = surname
     @name = name
     @patronymic = patronymic
+    @transfer_target = transfer_target
   end
 
   def initials
@@ -67,6 +72,10 @@ class Title
   end
   memoize :warnings
 
+  def warnings_s
+    warnings.join(', ')
+  end
+
   def warn(msg)
     @warnings << msg
     self
@@ -92,26 +101,26 @@ class Title
 
 
   FIELDS = ActiveSupport::OrderedHash[
-    :title        , 'Заголовок'            ,
     :duration     , 'Длительность'         ,
+    :author_stat  , 'Кол-во авторов'       ,
     :company_name , 'Имя компании'         ,
     :author1      , 'Автор 1'              ,
     :author2      , 'Автор 2'              ,
     :author3      , 'Автор 3'              ,
     :author4      , 'Автор 4'              ,
     :author5      , 'Автор 5'              ,
-    :citizenship  , 'Подданство'           ,
-    :category     , 'Отрасль производства' ,
+    :citizenship_s, 'Подданство'           ,
+    :occupation_s , 'Профессия'            ,
+    :position_s   , 'Сословие/чин'         ,
+    :location_s   , 'Местоположение'       ,
+    :category_s   , 'Отрасль производства' ,
     :cert_num     , '№ свидетельства'      ,
     :date_range   , 'Крайние даты'         ,
     :end_year     , 'Дата окончания'       ,
     :code         , 'Архивный шифр'        ,
+    :title        , 'Заголовок'            ,
+    # :warnings_s   , 'Проблемы'             ,
   ]
-
-
-  FIELDS.keys.map do |field|
-    attr_reader field
-  end
 
 
   attr_reader :lines
@@ -129,6 +138,10 @@ class Title
     @category = cat
   end
 
+  def category_s
+    category.to_s
+  end
+
   def category
     @category || classifier_category
   end
@@ -144,7 +157,6 @@ class Title
   def categories
     category_scores.map(&:second)
   end
-  memoize :categories
 
   def category_scores
     @category_scores || []
@@ -197,7 +209,7 @@ class Title
     ^\s*
     (?<range>
       (\d+ \s* \p{Alpha}+ \s* \d+)?
-      .*?
+      [\p{P}\s]*?
       (\d+ \s* \p{Alpha}+ \s*)? (?<end_year>\d{4})
     )
     [\s.]*
@@ -227,7 +239,7 @@ class Title
 
 
   def author_stat
-    (company_name.blank? ? '' : 'C') + authors.size.to_s
+    (company_name.blank? ? '' : 'Компания, ') + authors.size.to_s
   end
 
 
@@ -242,9 +254,9 @@ class Title
   end
 
   PARSED_AUTHOR_REGEX = /
-    (?<name>\p{Lu}[\p{Ll}.]+)?
+    (?<nameB>\p{Lu}[\p{Ll}.]+)?
     \s*
-    (?<patronymic>\p{Lu}[\p{Ll}.]+)?
+    (?<patronymicB>\p{Lu}[\p{Ll}.]+)?
     \s*
     (?<surname>
      (де[\p{Pd}\s]+(л[ая][\p{Pd}\s])?)?
@@ -252,16 +264,30 @@ class Title
       \p{Lu}[\p{alpha}\p{Pd}]+
     )
     \s*
-    (?<name>\p{Lu}[\p{Ll}.]+)?
+    (?<nameA>\p{Lu}[\p{Ll}.]+)?
     \s*
-    (?<patronymic>\p{Lu}[\p{Ll}.]+)?
+    (?<patronymicA>\p{Lu}[\p{Ll}.]+)?
   /x
+
+  OTHERS_REGEX = /(?<others>друг\p{alpha}+)/i
+  TRANSFER_REGEX = /(?<transfer>переда\p{alpha}+)/i
+  AUTHOR_REGEX = Regexp.union [PARSED_AUTHOR_REGEX, OTHERS_REGEX, TRANSFER_REGEX]
+
   def subject_with_authors
     return {} if subject_with_props[:subject].blank?
     subject = subject_with_props[:subject].clone
 
-    authors = subject.to_enum(:scan, PARSED_AUTHOR_REGEX).map do
-      Author.from_match(Regexp.last_match)
+    transfer = nil
+    authors = subject.to_enum(:scan, AUTHOR_REGEX).map do
+      m = Regexp.last_match.to_h
+      if m[:transfer]
+        transfer = true
+        next
+      elsif m[:others]
+        Author.others(m, transfer)
+      else
+        Author.from_match(m, transfer)
+      end
     end.compact.to_a
 
     authors.each do |author|
@@ -270,6 +296,8 @@ class Title
       subject.gsub!(author.patronymic || '', '')
     end
 
+    subject.gsub!(TRANSFER_REGEX, '')
+    subject.gsub!(OTHERS_REGEX, '')
     subject.gsub!(',', '')
     subject.gsub!(/(^|\s)и/, '')
     subject.gsub!(/\s+/, ' ')
@@ -303,19 +331,35 @@ class Title
 
 
   def citizenship
-    subject_with_props[:citizenship]
+    subject_with_props[:citizenship] || []
+  end
+
+  def citizenship_s
+    citizenship.join(', ')
   end
 
   def occupation
-    subject_with_props[:occupation]
+    subject_with_props[:occupation] || []
+  end
+
+  def occupation_s
+    occupation.join(', ')
   end
 
   def position
-    subject_with_props[:position]
+    subject_with_props[:position] || []
+  end
+
+  def position_s
+    position.join(', ')
   end
 
   def location
-    subject_with_props[:location]
+    subject_with_props[:location] || []
+  end
+
+  def location_s
+    location.join(', ')
   end
 
 
@@ -346,6 +390,7 @@ class Title
     'Итальянский подданный',
     'Испанский подданный',
     'Подданный США',
+    'Американский подданный',
     'Прусский подданный',
     'Австрийский подданный',
     'Русский подданный',
@@ -389,7 +434,7 @@ class Title
     key = Lingua.stemmer(occupation, :language => :ru)
     key = Unicode::downcase(key)
     regexp = Regexp.new("(?<!\\p{Alpha})#{key}\\p{Alpha}*", Regexp::IGNORECASE)
-    [occupation, regexp]
+    [regexp, occupation]
   end
 
   multiwords = [
@@ -430,15 +475,15 @@ class Title
     'Кандидат юридических наук',
 
   ].map do |o|
-    [o, stem_and_join.call(o)]
+    [stem_and_join.call(o), o]
   end
 
 
   combinations = occupations.permutation(2).map do |o1, o2|
-    occupation = o1.first + '-' + Unicode::downcase(o2.first)
-    regexp = Regexp.new(o1.second.source + '[\\p{Pd}\\s]*' + o2.second.source,
+    occupation = o1.second + '-' + Unicode::downcase(o2.second)
+    regexp = Regexp.new(o1.first.source + '[\\p{Pd}\\s]*' + o2.first.source,
                         Regexp::IGNORECASE)
-    [occupation, regexp]
+    [regexp, occupation]
   end
 
   OCCUPATIONS = Hash[
@@ -446,8 +491,26 @@ class Title
   ]
 
   merchant = [
-    /купц\p{alpha}+ \d[\p{Pd}oй ]* гильдии/i,
-    /(времен\p{alpha}+\s+)?((\d[\p{Pd}oй ]*|первой|второй) гильдии )?купц\p{alpha}+/i,
+    [
+      /купц\p{alpha}+ (\d)[\p{Pd}oй ]* гильдии/i,
+      proc { |m| "Купец #{m[1]}-й гильдии" }
+    ],
+    [
+      /(времен\p{alpha}+\s+)?((?<guild>\d[\p{Pd}oй ]*|первой|второй) гильдии )?купц\p{alpha}/i,
+      proc do |m|
+        if m[:guild].present?
+          guild = case m[:guild][0]
+                  when 'п' then 1
+                  when 'в' then 2
+                  else m[:guild][0]
+                  end
+          guild = " #{guild}-й гильдии"
+        else
+          guild = ""
+        end
+        "Купец" + guild
+    end
+    ]
   ]
 
   qualifier = /((отставн|действительн)\p{alpha}+ )?/.source
@@ -461,7 +524,7 @@ class Title
 
     'Потомственный почетный гражданин',
     'Почетный гражданин',
-  ].map(&stem_and_join) + [
+  ].map{ |s| [stem_and_join.call(s), proc { s }] } + [
     'Титулованый советник',
     'Статский советник',
     'Коллежский советник',
@@ -475,8 +538,9 @@ class Title
     'Провинциальный секретарь',
     'Синодский регистратор',
     'Коллежский регистратор',
-  ].map do |p|
-    Regexp.new(qualifier + stem_and_join.call(p).source, Regexp::IGNORECASE)
+  ].map do |s|
+    r = Regexp.new(qualifier + stem_and_join.call(s).source, Regexp::IGNORECASE)
+    [r, proc { s }]
   end + [
     'Подполковник',
     'Полковник',
@@ -488,12 +552,13 @@ class Title
     'Лейтенант',
     'Подпоручик',
     'Поручик',
-  ].map do |p|
-    Regexp.new(
+  ].map do |s|
+    r = Regexp.new(
       qualifier +
         '((гвардии|артиллерии) )?(инженер[\\p{Pd}\\sу]*)?' +
-        stem_and_join.call(p).source,
+        stem_and_join.call(s).source,
       Regexp::IGNORECASE)
+    [r, proc { s }]
   end
 
   LOCATIONS = [
@@ -521,14 +586,15 @@ class Title
       end
     end
 
-    POSITIONS.each do |regexp|
+    POSITIONS.each do |regexp, valueProc|
       subject.gsub!(regexp) do |m|
-        position.add m
+        m = Regexp.last_match
+        position.add valueProc.call(m)
         ''
       end
     end
 
-    OCCUPATIONS.each do |value, regexp|
+    OCCUPATIONS.each do |regexp, value|
       subject.gsub!(regexp) do |o|
         occupation.add value
         ''
@@ -537,7 +603,7 @@ class Title
 
 
     subject.gsub!(CITIZENSHIP_REGEXP) do |m|
-      citizenship.add :unknown
+      # citizenship.add :unknown
       ''
     end
 
@@ -596,9 +662,9 @@ class Title
     /
       ^
       дело\sо\sвыдаче\s
-      (привилегии\s)?
+      (привилегии[\p{p}\p{z}]+)?
       (?<duration>на\s\d+\s?(год|года|лет)\s)?
-      (привилегии\s)?
+      (привилегии[\p{p}\p{z}]+)?
       (?<subject>.*?)
       \s(?:на|для)\s(?!\d+\s?(год|года|лет)\s)
       (?<object>.*?)
@@ -618,7 +684,14 @@ class Title
     /xi,
   ]
 
+  NOT_PARSED_TITLE_REGEXES = [/[\p{p}\p{z}]то же[\p{p}\p{z}]/i]
+
   def parsed_title
+    NOT_PARSED_TITLE_REGEXES.each do |regex|
+      if regex.match(title)
+        return {}
+      end
+    end
     PARSED_TITLE_REGEXES.each do |regex|
       m = regex.match(title)
       next if m.nil?
@@ -656,12 +729,12 @@ class Title
 
   def validate_authors
     # warn "No authors parsed" if authors.empty? && company_name.blank?
-    warn "Suspicious author count" if authors.count > 3
+    # warn "Suspicious author count" if authors.count > 3
   end
 
 
   def validate_citizenship
-    warn "Unknown citizenship" if citizenship.blank?
+    warn "Unknown citizenship" if citizenship.include? :unknown
   end
 
 
@@ -724,6 +797,7 @@ class Title
     occupation
     position
     location
+    category
   }
 
   def to_spec
@@ -802,7 +876,7 @@ class Titles
 
 
   def parse_category_line(line)
-    Category.new(line).tap do |category|
+    Category.parse(line).tap do |category|
       classifier_categories[category.number] = category
     end
   end
@@ -837,8 +911,6 @@ class Titles
       title
     end
     correct = control.count(&:classified_correctly?)
-    p correct
-    p control.size
     correct_p = (correct.to_f/control.size).round(2) * 100
     puts "Correctly classified records #{correct_p}%"
   end
@@ -851,6 +923,15 @@ class Titles
     titles
     .select(&:needs_classification?)
     .sort_by(&:confidence_score).first(n)
+  end
+
+  def categories_stats
+    s = Hash.new(0)
+    classifier_categories.values.each { |cat| s[cat] = 0 }
+    titles
+      .map{ |t| t.category || Category.nil_category }
+      .each { |cat| s[cat] += 1 }
+    s.to_a
   end
 
   def stats
