@@ -168,6 +168,15 @@ class Parser
     records = book.create_worksheet :name => 'Все записи'
     write_titles_xls(titles, records)
 
+    titles
+      .group_by(&:author_stat)
+      .to_a.sort_by(&:first)
+      .each do |author_stat, titles|
+        sheet = book.create_worksheet :name => author_stat.to_s
+        write_titles_xls(titles, sheet)
+      end
+
+
     invalid_records = book.create_worksheet :name => 'Проблемные записи'
     write_titles_xls(titles.invalid_titles, invalid_records)
 
@@ -367,15 +376,15 @@ parser.read_classifier_categories
 parser.read_classifier_examples
 parser.read_titles()
 # parser.evaluate_classifier
-parser.classify
+# parser.classify
 parser.write_specs(spec_titles)
-parser.write_xls
-parser.print_warnings
+# parser.write_xls
+# parser.print_warnings
 # parser.print_citizenship_stats
 # parser.write_yaml_by_author_stat
 # parser.print_subject_stats
 # parser.print_company_stats
 # parser.print_title_stats
 # parser.write_classifier_examples(5000)
-parser.print_author_stats
-parser.print_stats
+# parser.print_author_stats
+# parser.print_stats

@@ -3,6 +3,8 @@ require 'active_support/core_ext'
 
 require 'memoist'
 
+require 'strscan'
+
 require 'lingua/stemmer'
 require 'unicode'
 
@@ -10,7 +12,7 @@ require 'unicode'
 class MatchData
 
   def to_h
-    Hash[names.map(&:to_sym).zip(captures)]
+    Hash[names.map(&:to_sym).zip(captures) + [[:full, to_s]]]
   end
 
 end
@@ -56,6 +58,22 @@ class Author
 
   def full_name
     [surname, name, patronymic].compact.join(' ')
+  end
+
+end
+
+
+class Token
+
+  attr_reader :type, :value
+
+  def initialize(type, value)
+    @type = type
+    @value = value
+  end
+
+  def to_yaml
+    [type, value]
   end
 
 end
@@ -118,6 +136,7 @@ class Title
     :date_range   , 'Крайние даты'         ,
     :end_year     , 'Дата окончания'       ,
     :code         , 'Архивный шифр'        ,
+    :stripped_subject_with_authors, 'Очищенный заголовок',
     :title        , 'Заголовок'            ,
     # :warnings_s   , 'Проблемы'             ,
   ]
@@ -273,6 +292,7 @@ class Title
   TRANSFER_REGEX = /(?<transfer>переда\p{alpha}+)/i
   AUTHOR_REGEX = Regexp.union [PARSED_AUTHOR_REGEX, OTHERS_REGEX, TRANSFER_REGEX]
 
+
   def subject_with_authors
     return {} if subject_with_props[:subject].blank?
     subject = subject_with_props[:subject].clone
@@ -402,7 +422,7 @@ class Title
     key = Lingua.stemmer(key, :language => :ru)
     key = Unicode::downcase(key)
     regexp = Regexp.new("(?<!\\p{Alpha})#{key}\\p{Alpha}+", Regexp::IGNORECASE)
-    [regexp, citizenship]
+    [regexp, proc { citizenship }]
   end
 
   COUNTRIES = Hash[countries]
@@ -434,7 +454,7 @@ class Title
     key = Lingua.stemmer(occupation, :language => :ru)
     key = Unicode::downcase(key)
     regexp = Regexp.new("(?<!\\p{Alpha})#{key}\\p{Alpha}*", Regexp::IGNORECASE)
-    [regexp, occupation]
+    [regexp, proc { occupation }]
   end
 
   multiwords = [
@@ -475,12 +495,12 @@ class Title
     'Кандидат юридических наук',
 
   ].map do |o|
-    [stem_and_join.call(o), o]
+    [stem_and_join.call(o), proc { o }]
   end
 
 
   combinations = occupations.permutation(2).map do |o1, o2|
-    occupation = o1.second + '-' + Unicode::downcase(o2.second)
+    occupation = proc {o1.second.call() + '-' + Unicode::downcase(o2.second.call()) }
     regexp = Regexp.new(o1.first.source + '[\\p{Pd}\\s]*' + o2.first.source,
                         Regexp::IGNORECASE)
     [regexp, occupation]
@@ -562,10 +582,19 @@ class Title
   end
 
   LOCATIONS = [
-    /жител\p{alpha}+ (города|гор.|г.|д.) \p{lu}\p{ll}+/i,
-    /\p{lu}\p{ll}+ губернии/i,
-    /(санкт[ \p{Pd}]*)?петербургск\p{alpha}+/i,
-    /московск\p{alpha}+/i,
+    [
+      /жител\p{alpha}+ (города|гор.|г.|д.) (?<name>\p{lu}\p{ll}+)/i,
+      proc { |m| 'г. ' + Unicode::titlecase(m[:name]) }
+    ],
+    [
+      /(?<name>\p{lu}\p{ll}+) губернии/i,
+      proc { |m| Unicode::titlecase(m[:name]) + ' губернии' }
+    ],
+    [
+      /(санкт[ \p{Pd}]*)?петербургск\p{alpha}+/i,
+      proc { 'Санкт-Петербург' }
+    ],
+    [/московск\p{alpha}+/i, proc { 'Москва' }]
   ]
 
 
@@ -579,24 +608,26 @@ class Title
     citizenship = Set.new
     location = Set.new
 
-    LOCATIONS.each do |regexp|
-      subject.gsub!(regexp) do |m|
-        location.add m
+    LOCATIONS.each do |regexp, valueProc|
+      subject.gsub!(regexp) do
+        m = Regexp.last_match
+        location.add valueProc.call(m)
         ''
       end
     end
 
     POSITIONS.each do |regexp, valueProc|
-      subject.gsub!(regexp) do |m|
+      subject.gsub!(regexp) do
         m = Regexp.last_match
         position.add valueProc.call(m)
         ''
       end
     end
 
-    OCCUPATIONS.each do |regexp, value|
-      subject.gsub!(regexp) do |o|
-        occupation.add value
+    OCCUPATIONS.each do |regexp, valueProc|
+      subject.gsub!(regexp) do
+        m = Regexp.last_match
+        occupation.add valueProc.call(m)
         ''
       end
     end
@@ -607,10 +638,11 @@ class Title
       ''
     end
 
-    COUNTRIES.each do |regexp, value|
-      subject.gsub!(regexp) do |m|
+    COUNTRIES.each do |regexp, valueProc|
+      subject.gsub!(regexp) do
+        m = Regexp.last_match
         citizenship.delete :unknown
-        citizenship.add value
+        citizenship.add valueProc.call(m)
         ''
       end
     end
@@ -636,8 +668,66 @@ class Title
   end
   memoize :subject_with_props
 
+
+  TOKENS = ActiveSupport::OrderedHash[
+    :occupation  , OCCUPATIONS ,
+    :position    , POSITIONS   ,
+    :country     , COUNTRIES   ,
+    :location    , LOCATIONS   ,
+    :citizenship,  [
+      [CITIZENSHIP_REGEXP, proc { |m| m.matched }],
+      [FOREIGNER_REGEXP, proc { |m| m.matched }]
+    ],
+    :initial, [
+      [/\p{Lu}\./, proc { |m| m.matched } ]
+    ],
+    :surname, [
+      [/(?<surname>
+      (де[\p{Pd}\s]+(л[ая][\p{Pd}\s])?)?
+      (фон[\p{Pd}\s]+(дер[\p{Pd}\s])?)?
+        \p{Lu}[\p{alpha}\p{Pd}]+
+      )/x, proc { |m| m.matched } ]
+    ]
+  ]
+
+  def subject_tokens
+    tokens = []
+    scanner = StringScanner.new(parsed_title[:subject].to_s)
+
+    until scanner.eos?
+      consumed = catch :next do
+        TOKENS.each do |token, regexps|
+          regexps.each do |regexp, value|
+            if scanner.scan(regexp)
+              tokens << Token.new(token, value.call(scanner))
+              throw :next, true
+            end
+          end
+        end
+        if scanner.skip(/\s+/)
+          throw :next, true
+        end
+        if scanner.scan(/[^\s]+/)
+          tokens << Token.new(:unknown, scanner.matched)
+          throw :next, true
+        end
+      end
+      break unless consumed
+    end
+    if scanner.rest?
+      tokens << Token.new(:unknown, scanner.rest)
+    end
+    tokens
+  end
+
+
   def stripped_subject
     subject_with_authors[:subject]
+  end
+
+
+  def stripped_subject_with_authors
+    subject_with_props[:subject]
   end
 
 
@@ -719,7 +809,6 @@ class Title
 
 
   def validate
-    validate_required_fields_present
     validate_line_count
     validate_parsed_title
     validate_authors
@@ -744,20 +833,6 @@ class Title
 
   def validate_parsed_title
     warn "Can't parse title" if title.present? &&title.present? && parsed_title.size == 0
-  end
-
-
-  REQUIRED_FIELDS =
-    [:title, :code].to_set
-  # REQUIRED_FIELDS =
-  #   [:author_name, :author_surname, :title, :end_year, :code].to_set
-
-  def validate_required_fields_present
-    REQUIRED_FIELDS.each do |field|
-      if send(field).nil?
-        warn "Missing #{field}"
-      end
-    end
   end
 
 
@@ -789,7 +864,6 @@ class Title
     end_year
     object
     subject
-    stripped_subject
     duration
     company_name
     authors
@@ -797,14 +871,12 @@ class Title
     occupation
     position
     location
-    category
   }
 
   def to_spec
     {
       :input => full_str,
       :output => Hash[SPEC_FIELDS.map{ |field| [field, send(field)] } ]
-      # :output => Hash[FIELDS.keys.map{ |field| [field, send(field)] } ]
     }
   end
   memoize :to_spec
