@@ -9,6 +9,7 @@ require 'lingua/stemmer'
 require 'unicode'
 
 require_relative 'regexps'
+require_relative 'token_parser'
 
 
 class MatchData
@@ -44,12 +45,15 @@ class Author
   end
 
   attr_reader :surname, :name, :patronymic, :transfer_target
+  attr_writer :surname
+
   def initialize(surname, name, patronymic, transfer_target)
     @surname = surname
     @name = name
     @patronymic = patronymic
     @transfer_target = transfer_target
   end
+
 
   def initials
     [name, patronymic]
@@ -67,15 +71,16 @@ end
 
 class Token
 
-  attr_reader :type, :value
+  attr_reader :type, :matched, :value
 
-  def initialize(type, value)
+  def initialize(type, matched, value = nil)
     @type = type
+    @matched = matched
     @value = value
   end
 
   def to_yaml
-    [type, value]
+    [type, matched, value].compact
   end
 
 end
@@ -271,7 +276,7 @@ class Title
   end
 
   def authors
-    subject_with_authors[:authors] || []
+    parsed_subject_tokens[:authors].to_a
   end
 
   PARSED_AUTHOR_REGEX = /
@@ -353,7 +358,12 @@ class Title
 
 
   def citizenship
-    subject_with_props[:citizenship] || []
+    citizenship = parsed_subject_tokens[:citizenship].to_a
+    if citizenship.empty?
+      ['Российский подданный']
+    else
+      citizenship
+    end
   end
 
   def citizenship_s
@@ -361,7 +371,7 @@ class Title
   end
 
   def occupation
-    subject_with_props[:occupation] || []
+    parsed_subject_tokens[:occupation].to_a
   end
 
   def occupation_s
@@ -369,7 +379,7 @@ class Title
   end
 
   def position
-    subject_with_props[:position] || []
+    parsed_subject_tokens[:position].to_a
   end
 
   def position_s
@@ -377,7 +387,7 @@ class Title
   end
 
   def location
-    subject_with_props[:location] || []
+    parsed_subject_tokens[:location].to_a
   end
 
   def location_s
@@ -387,7 +397,7 @@ class Title
 
 
 
-  def subject_with_props
+  def subject_with_props_old
     return {} if parsed_title[:subject].blank?
     subject = parsed_title[:subject].clone
 
@@ -422,23 +432,12 @@ class Title
     end
 
 
-    subject.gsub!(CITIZENSHIP_REGEXP) do |m|
-      # citizenship.add :unknown
-      ''
-    end
-
-    COUNTRIES.each do |regexp, valueProc|
+    CITIZENSHIPS.each do |regexp, valueProc|
       subject.gsub!(regexp) do
         m = Regexp.last_match
-        citizenship.delete :unknown
         citizenship.add valueProc.call(m)
         ''
       end
-    end
-
-    subject.gsub!(FOREIGNER_REGEXP) do |m|
-      citizenship.add 'Иностранец'
-      ''
     end
 
     if citizenship.empty?
@@ -455,59 +454,77 @@ class Title
       citizenship: citizenship.to_a
     }
   end
-  memoize :subject_with_props
+  memoize :subject_with_props_old
 
 
   TOKENS = ActiveSupport::OrderedHash[
     :occupation  , OCCUPATIONS ,
     :position    , POSITIONS   ,
-    :country     , COUNTRIES   ,
+    :citizenship , CITIZENSHIPS,
     :location    , LOCATIONS   ,
-    :citizenship,  [
-      [CITIZENSHIP_REGEXP, proc { |m| m.matched }],
-      [FOREIGNER_REGEXP, proc { |m| m.matched }]
+    :company_type, COMPANY_TYPES,
+    :duration, [
+      [/с продлением срока действия до ((\d+) (год|года|лет))\s*/,
+      proc {|m| m[1]}]
+    ],
+    :open_quote, [
+      [/\p{Pi}\s*/, :matched.to_proc]
+    ],
+    :close_quote, [
+      [/\p{Pf}\s*/, :matched.to_proc]
     ],
     :initial, [
-      [/\p{Lu}\./, proc { |m| m.matched } ]
+      [/\p{Lu}\.\s*/, :matched.to_proc]
     ],
     :surname, [
       [/(?<surname>
       (де[\p{Pd}\s]+(л[ая][\p{Pd}\s])?)?
       (фон[\p{Pd}\s]+(дер[\p{Pd}\s])?)?
         \p{Lu}[\p{alpha}\p{Pd}]+
-      )/x, proc { |m| m.matched } ]
-    ]
+      )\s*/x, proc { |m| m.matched } ],
+      [/(друг\p{alpha}+)\s*/i, proc { 'другие' }]
+    ],
+    :connector, CONNECTORS,
   ]
 
   def subject_tokens
     tokens = []
     scanner = StringScanner.new(parsed_title[:subject].to_s)
 
-    until scanner.eos?
+    loop do
       consumed = catch :next do
         TOKENS.each do |token, regexps|
-          regexps.each do |regexp, value|
+          regexps.each do |regexp, valueProc|
             if scanner.scan(regexp)
-              tokens << Token.new(token, value.call(scanner))
+              tokens << Token.new(token, scanner.matched, valueProc.call(scanner))
               throw :next, true
             end
           end
         end
-        if scanner.skip(/\s+/)
+        if scanner.scan(/\p{word}+\s*/)
+          tokens << Token.new(:word, scanner.matched)
           throw :next, true
         end
-        if scanner.scan(/[^\s]+/)
-          tokens << Token.new(:unknown, scanner.matched)
+        if scanner.scan(/\p{punct}+\s*/)
+          tokens << Token.new(:punct, scanner.matched)
           throw :next, true
         end
       end
       break unless consumed
     end
     if scanner.rest?
-      tokens << Token.new(:unknown, scanner.rest)
+      tokens << Token.new(:rest, scanner.rest)
     end
     tokens
   end
+  memoize :subject_tokens
+
+
+  def parsed_subject_tokens
+    parser = TokenParser.new(subject_tokens)
+    parser.parse
+  end
+  memoize :parsed_subject_tokens
 
 
   def stripped_subject
@@ -516,7 +533,7 @@ class Title
 
 
   def stripped_subject_with_authors
-    subject_with_props[:subject]
+    parsed_subject_tokens[:subject]
   end
 
 
@@ -645,6 +662,14 @@ class Title
   memoize :categories_dbg
 
 
+  def subject_tokens_yaml
+    subject_tokens.map(&:to_yaml)
+  end
+
+  def authors_yaml
+    authors.map(&:full_name)
+  end
+
   SPEC_FIELDS = %i{
     code
     title
@@ -653,9 +678,9 @@ class Title
     end_year
     object
     subject
+    subject_tokens_yaml
     duration
-    company_name
-    authors
+    authors_yaml
     citizenship
     occupation
     position

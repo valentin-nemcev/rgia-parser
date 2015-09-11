@@ -325,6 +325,24 @@ class Parser
     print_count count
   end
 
+  def print_token_stats
+    total = 0
+    unknown = 0
+    titles.each do |title|
+      types = title.subject_tokens.collect(&:type)
+      next if types.include? :connector
+      next if types.include? :open_quote
+      next if types.include? :close_quote
+      total += 1
+      next unless types.include?(:punct) || types.include?(:word)
+      unknown += 1
+      puts
+      puts title.subject
+      puts title.subject_tokens.map(&:to_yaml)
+    end
+    puts "#{unknown}/#{total}"
+  end
+
   def print_author_stats
     count = titles.each_with_object(Hash.new(0)) do |title, c|
       c[title.author_stat] += 1
@@ -386,5 +404,6 @@ parser.write_specs(spec_titles)
 # parser.print_company_stats
 # parser.print_title_stats
 # parser.write_classifier_examples(5000)
+# parser.print_token_stats
 # parser.print_author_stats
 # parser.print_stats
