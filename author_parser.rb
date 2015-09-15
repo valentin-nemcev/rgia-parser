@@ -1,5 +1,5 @@
 
-class TokenEntry
+class Author
   def to_yaml
     result = Hash.new([])
     result[:full_name] = full_name
@@ -15,7 +15,7 @@ class TokenEntry
 end
 
 
-class TokenAuthor < TokenEntry
+class Person < Author
   attr_accessor :initials_before_surname
   attr_reader :name_tokens
 
@@ -76,14 +76,22 @@ class TokenAuthor < TokenEntry
     end
   end
 
+  def lemmatize(surname)
+    @petrovich ||= Petrovich.new(:male )
+    @petrovich.lastname(surname.strip, :nominative, :dative) + ' '
+  end
+
   def full_name
     surname_word = self.surname_word
     values = if surname_word.present?
       name_tokens
         .select{ |t| t.type.in? [:initial, :proper_name, :word] }
-        .map { |t| t == surname_word ? Unicode::capitalize(t.value) : t.value }
+        .map do |t|
+          value = t == surname_word ? Unicode::capitalize(t.value) : t.value
+          t.type != :initial ? lemmatize(value) : value
+        end
     else
-      name_chunk.map(&:value)
+      name_chunk.map{ |t| t.type != :initial ? lemmatize(t.value) : t.value }
     end
     values.join('')
   end
@@ -97,7 +105,7 @@ class TokenAuthor < TokenEntry
   end
 
   def fill_from_prev(prev_author)
-    return unless prev_author.kind_of?(TokenAuthor) && proper_name_tokens.empty?
+    return unless prev_author.kind_of?(Person) && proper_name_tokens.empty?
 
     if prev_author.initials_after_surname?
       self.insert_name_tokens_before_initials(prev_author.proper_name_tokens)
@@ -105,7 +113,7 @@ class TokenAuthor < TokenEntry
   end
 
   def fill_from_next(next_author)
-    return unless next_author.kind_of?(TokenAuthor) && proper_name_tokens.empty?
+    return unless next_author.kind_of?(Person) && proper_name_tokens.empty?
 
     if next_author.initials_before_surname?
       self.insert_name_tokens_after_initials(next_author.proper_name_tokens)
@@ -115,7 +123,7 @@ class TokenAuthor < TokenEntry
 end
 
 
-class TokenCompany < TokenEntry
+class Company < Author
 
   attr_reader :name_tokens, :tag_tokens
   def initialize
@@ -162,7 +170,7 @@ class TokenCompany < TokenEntry
 end
 
 
-class TokenParser
+class AuthorParser
 
   attr_accessor :subject_tokens
   attr_reader :authors
@@ -172,45 +180,43 @@ class TokenParser
     @authors = []
   end
 
-  # attr_reader :tags
   def reset_author
-    @author = nil
+    @person = nil
     @company = nil
-    # @tags = []
   end
 
   def company_present?
     @company.present?
   end
 
-  def author_present?
-    not (@author.nil? || @author.empty?)
+  def person_present?
+    not (@person.nil? || @person.empty?)
   end
 
   def company
     @company ||=
       begin
-        authors.push(@company = TokenCompany.new)
-        # @company.tags = @tags
+        authors.push(@company = Company.new)
         @company
       end
   end
 
-  def author
-    @author ||=
+  def person
+    @person ||=
       begin
-        authors.push(@author = TokenAuthor.new)
-        # @author.tags = @tags
-        @author
+        authors.push(@person = Person.new)
+        @person
       end
   end
 
-  def replace_author_with_company
-    return unless @author == authors.last
-    author = authors.pop
+  def replace_person_with_company
+    return unless @person == authors.last
+    person = authors.pop
     reset_author
-    company.add_name_token(*author.name_tokens) if author.present?
-    company.add_tag_tokens(author.tag_tokens) if author.present?
+    if person.present?
+      company.add_name_token(*person.name_tokens)
+      company.add_tag_tokens(person.tag_tokens)
+    end
   end
 
   def parse
@@ -233,26 +239,23 @@ class TokenParser
         end
       else
         case token.type
-        # when :occupation, :position, :citizenship, :location
-        #   # reset_author
-        #   tags << token
         when :company_type, :open_quote
-          if author_present?
+          if person_present?
             reset_author
           else
-            replace_author_with_company
+            replace_person_with_company
           end
           company.add_name_token token
         when :connector
-          reset_author if author_present?
+          reset_author if person_present?
         else
-          author.add_name_token token
+          person.add_name_token token
         end
       end
     end
     fill_authors
     authors.pop if authors.size > 1 && authors.last.empty?
-    {:authors => authors}
+    authors
   end
 
   def fill_authors

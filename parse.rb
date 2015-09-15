@@ -225,10 +225,9 @@ class Parser
   end
 
   def write_spec_sample(seed)
-            # .sample(100, random: Random.new(seed))
-    s = titles.suspicious
+    s = titles
+              .sample(100, random: Random.new(seed))
               .map(&:to_spec)
-    puts "Suspicious: #{s.count}"
     File.write('out/record_spec_sample.yaml', s.to_yaml)
   end
 
@@ -391,6 +390,7 @@ spec_titles = [
   "РГИА. Ф. 24. Оп. 11. Д. 646",
   "РГИА. Ф. 24. Оп. 7. Д. 239",
 ]
+
 
 parser = Parser.new()
 parser.read_classifier_categories

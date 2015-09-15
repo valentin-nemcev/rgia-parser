@@ -261,3 +261,86 @@ CONNECTORS = [
 ].map do |r|
   [r, proc { |m| m.matched }]
 end
+
+
+TOKENS = ActiveSupport::OrderedHash[
+  :occupation  , OCCUPATIONS ,
+  :position    , POSITIONS   ,
+  :citizenship , CITIZENSHIPS,
+  :location    , LOCATIONS   ,
+  :company_type, COMPANY_TYPES,
+  :company_type_qualifier, COMPANY_TYPE_QUALIFIERS,
+  :duration, [
+    [/с продлением срока действия до ((\d+) (год|года|лет))\s*/,
+    proc {|m| m[1]}]
+  ],
+  :open_quote, [
+    [/\p{Pi}\s*/, :matched.to_proc]
+  ],
+  :close_quote, [
+    [/\p{Pf}\s*/, :matched.to_proc]
+  ],
+  :initial, [
+    [/\p{L}\p{Ll}?\.\s*/, proc { |m| Unicode::upcase(m.matched).strip + ' ' }]
+  ],
+  :proper_name, PROPER_NAMES,
+  :connector, CONNECTORS,
+]
+
+class SubjectTokenizer
+
+  attr_reader :scanner, :tokens
+
+  def initialize(subject)
+    @scanner = StringScanner.new(subject)
+    @tokens = []
+  end
+
+  def tokenize
+    loop do
+      consumed = catch :next do
+        TOKENS.each do |token, regexps|
+          regexps.each do |regexp, valueProc|
+            if scanner.scan(regexp)
+              tokens << Token.new(token, scanner.matched, valueProc.call(scanner))
+              throw :next, true
+            end
+          end
+        end
+        if scanner.scan(/\p{word}+\s*/)
+          tokens << Token.new(:word, scanner.matched)
+          throw :next, true
+        end
+        if scanner.scan(/\p{punct}+\s*/)
+          tokens << Token.new(:punct, scanner.matched)
+          throw :next, true
+        end
+      end
+      break unless consumed
+    end
+    if scanner.rest?
+      tokens << Token.new(:rest, scanner.rest)
+    end
+    tokens
+  end
+end
+
+class Token
+
+  def self.empty
+    @empty ||= new(nil, '')
+  end
+
+  attr_reader :type, :matched, :value
+
+  def initialize(type, matched, value = nil)
+    @type = type
+    @matched = matched
+    @value = value || matched
+  end
+
+  def to_yaml
+    [type, matched, value].uniq.compact.join(' | ')
+  end
+
+end
