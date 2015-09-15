@@ -130,7 +130,7 @@ merchant = [
     proc { |m| "Купец #{m[1]}-й гильдии" }
   ],
   [
-    /(времен\p{alpha}+\s+)?((?<guild>\d[\p{Pd}oй ]*|первой|второй) гильдии )?купц\p{alpha}\s*/i,
+    /(времен\p{alpha}+\s+)?((?<guild>\d[\p{Pd}oй ]*|первой|второй) гильдии )?купц\p{alpha}{,2}\s*/i,
     proc do |m|
       if m[:guild].present?
         guild = case m[:guild][0]
@@ -189,15 +189,16 @@ end + [
 ].map do |s|
   r = Regexp.new(
     qualifier +
-      '((гвардии|артиллерии) )?(инженер[\\p{Pd}\\sу]*)?' +
-      stem_and_join.call(s).source,
+      /((запаса армии|гвардии|артиллерии) )?(инженер[\p{Pd}\sу]*)?/.source +
+      stem_and_join.call(s).source +
+      /(запаса армии )?/i.source,
     Regexp::IGNORECASE)
   [r, proc { s }]
 end
 
 LOCATIONS = [
   [
-    /жител\p{alpha}+ (города|гор.|г.|д.) (?<name>\p{lu}\p{ll}+)\s*/i,
+    /(жител\p{alpha}+|приписанн\p{alpha}+ к) (города|гор.|г.|д.) (?<name>\p{lu}\p{ll}+)\s*/i,
     proc { |m| 'г. ' + Unicode::capitalize(m[:name]) }
   ],
   [
@@ -214,20 +215,48 @@ LOCATIONS = [
 
 COMPANY_TYPES = [
   'Товарищество',
-  'Товарищество',
   'Торговый дом',
+  'Банкирский дом',
   'Акционерное общество',
+  'Международная компания',
+  'Международное общество',
   'Общество',
   'Компания',
+  'Фирма',
+  'Дирекция',
+  'Патентное бюро',
+  'Синдикат',
+  'Завод',
+  'Фабрика',
+  'Управление',
 ].map do |o|
   [stem_and_join.call(o), proc { o }]
 end
 
+COMPANY_TYPE_QUALIFIERS = [
+  [/с ограниченной ответственностью\s*/i, :matched.to_proc],
+  [/(,)? бывш[\.\p{alpha}]+\s*/i,:matched.to_proc]
+]
+
+PROPER_NAMES = [
+  [/
+    (де[\p{Pd}\s]+(л[еая][\p{Pd}\s])?)?
+    (фон[\p{Pd}\s]+(дер[\p{Pd}\s])?)?
+    (д['ˈ])?
+    \p{Lu}[\p{alpha}\p{Pd}]+
+    (\s+(Дж.|младш\p{alpha}+))?
+    \s*/x, proc { |m| m.matched } ],
+  [/(друг\p{alpha}+|др.|прочее)\s*/i, proc { 'другие' }],
+  [/К°/i, proc { 'К°' }],
+]
+
+
 CONNECTORS = [
-  /и\s*/,
-  /(,)?\s*c передач\p{alpha}+\s*/,
-  /(,)?\s*передан\p{alpha}+\s*/,
-  /(,)?\s*торгующ\p{alpha}+ под\s*/,
+  /и\s+/,
+  /(,)?\s*c передач\p{alpha}+\s*/i,
+  /(,)?\s*передан\p{alpha}+( затем)?( в( совместную)?собственность)?\s*/i,
+  /(,)?\s*торгующ\p{alpha}+ под\s*/i,
+  /(,)?\s*служащ\p{alpha}+ в\s/i,
   /,\s*/
 ].map do |r|
   [r, proc { |m| m.matched }]

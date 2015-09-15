@@ -71,16 +71,20 @@ end
 
 class Token
 
+  def self.empty
+    @empty ||= new(nil, '')
+  end
+
   attr_reader :type, :matched, :value
 
   def initialize(type, matched, value = nil)
     @type = type
     @matched = matched
-    @value = value
+    @value = value || matched
   end
 
   def to_yaml
-    [type, matched, value].compact
+    [type, matched, value].uniq.compact.join(' | ')
   end
 
 end
@@ -265,7 +269,16 @@ class Title
 
 
   def author_stat
-    (company_name.blank? ? '' : 'Компания, ') + authors.size.to_s
+    author_count = 0
+    company_count = 0
+    authors.each do |a|
+      if a.kind_of? TokenAuthor
+        author_count += 1
+      else
+        company_count += 1
+      end
+    end
+    "#{company_count + author_count} C#{company_count} A#{author_count}"
   end
 
 
@@ -463,6 +476,7 @@ class Title
     :citizenship , CITIZENSHIPS,
     :location    , LOCATIONS   ,
     :company_type, COMPANY_TYPES,
+    :company_type_qualifier, COMPANY_TYPE_QUALIFIERS,
     :duration, [
       [/с продлением срока действия до ((\d+) (год|года|лет))\s*/,
       proc {|m| m[1]}]
@@ -474,16 +488,9 @@ class Title
       [/\p{Pf}\s*/, :matched.to_proc]
     ],
     :initial, [
-      [/\p{Lu}\.\s*/, :matched.to_proc]
+      [/\p{L}\p{Ll}?\.\s*/, proc { |m| Unicode::upcase(m.matched).strip + ' ' }]
     ],
-    :surname, [
-      [/(?<surname>
-      (де[\p{Pd}\s]+(л[ая][\p{Pd}\s])?)?
-      (фон[\p{Pd}\s]+(дер[\p{Pd}\s])?)?
-        \p{Lu}[\p{alpha}\p{Pd}]+
-      )\s*/x, proc { |m| m.matched } ],
-      [/(друг\p{alpha}+)\s*/i, proc { 'другие' }]
-    ],
+    :proper_name, PROPER_NAMES,
     :connector, CONNECTORS,
   ]
 
@@ -562,7 +569,7 @@ class Title
       (?<duration>на\s\d+\s?(год|года|лет)\s)?
       (привилегии[\p{p}\p{z}]+)?
       (?<subject>.*?)
-      \s(?:на|для)\s(?!\d+\s?(год|года|лет)\s)
+      (\s|,)(?:на)\s(?!\d+\s?(год|года|лет)\s)
       (?<object>.*?)
       (?<subject_company>
         [,\s]+передан\p{Alpha}+
@@ -646,6 +653,10 @@ class Title
     warnings.empty?
   end
 
+  def suspicious?
+    subject.present? && (!authors.count.between?(1,4) || authors.any?(&:suspicious?))
+  end
+
 
   def to_row
     FIELDS.keys.map do |field|
@@ -667,7 +678,7 @@ class Title
   end
 
   def authors_yaml
-    authors.map(&:full_name)
+    authors.map(&:to_yaml)
   end
 
   SPEC_FIELDS = %i{
@@ -681,10 +692,6 @@ class Title
     subject_tokens_yaml
     duration
     authors_yaml
-    citizenship
-    occupation
-    position
-    location
   }
 
   def to_spec
@@ -803,6 +810,10 @@ class Titles
 
   def invalid_titles
     titles.reject(&:valid?)
+  end
+
+  def suspicious
+    titles.select(&:suspicious?)
   end
 
   def with_worst_category_scores(n)

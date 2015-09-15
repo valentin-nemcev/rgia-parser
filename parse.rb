@@ -224,6 +224,14 @@ class Parser
                titles.values_at(*title_codes).map(&:to_spec).to_yaml)
   end
 
+  def write_spec_sample(seed)
+            # .sample(100, random: Random.new(seed))
+    s = titles.suspicious
+              .map(&:to_spec)
+    puts "Suspicious: #{s.count}"
+    File.write('out/record_spec_sample.yaml', s.to_yaml)
+  end
+
   def write_classifier_examples(n)
     out_txt_categories_filepath = 'out/records_categories_worst.txt'
     File.open(out_txt_categories_filepath, 'w') do |out_file|
@@ -289,40 +297,24 @@ class Parser
 
 
   def print_subject_stats
-    singles = []
-    pairs = []
-    triples = []
-    stemmer = Lingua::Stemmer.new(:language => "ru")
-    puts 'Fully parsed: ' +
-      titles.map(&:stripped_subject).select(&:blank?).count.to_s
-    puts 'Unparsed without company: ' +
-      titles.select{ |t| t.company_name.blank? && t.stripped_subject.present? }
-        .each{ |t| 
-          puts t.subject;
-        }
-        .count.to_s
-    titles.select{ |t| t.company_name.blank? }.each do |title|
-      words = (title.stripped_subject.try{ |s| s.split(/[^\p{alnum}]/)} || [])
-        .select{ |w| w.length > 1 }
-        .map { |w| stemmer.stem(Unicode.downcase(w)) }
-      # if words.include? 'электрическ'
-      # if words.include?('на') || words.include?('же')
-      #   puts title.subject
-      # end
-      singles.push(*words)
-      pairs.push(*words.each_cons(2).map{ |c| c.join(' ')})
-      triples.push(*words.each_cons(3).map{ |c| c.join(' ')})
-      # pairs.push(*words.each_cons(2).select{|c| c.include? 'крестьянин'}.map{ |c| c.join(' ')})
-      # triples.push(*words.each_cons(3).select{|c| c.include? 'крестьянин'}.map{ |c| c.join(' ')})
-    end
+   # titles
+   #    .each{ |t|
+   #      t.authors.each{ |a|
+   #        if a.respond_to?(:surname_word) && a.surname_word.present?
+   #          puts
+   #          puts t.to_spec.to_yaml;
+   #          p t.subject
+   #          p a.surname_word.value
+   #        end
+   #      }
+   #    }
 
+   # puts titles.select{ |t| (t.subject || '').match(/иностранке|гражданке/) }
+   #    .each{ |t|
+   #      puts t.to_spec.to_yaml;
+   #    }
+   #    .count.to_s
 
-    count = Hash.new(0)
-    singles.each { |w| count[w] += 1}
-    pairs.each { |w| count[w] += 1}
-    triples.each { |w| count[w] += 1}
-
-    print_count count
   end
 
   def print_token_stats
@@ -387,6 +379,17 @@ spec_titles = [
   "РГИА. Ф. 24. Оп. 7. Д. 515",
   "РГИА. Ф. 24. Оп. 6. Д. 189",
   "РГИА. Ф. 24. Оп. 6. Д. 1016",
+  "РГИА. Ф. 24. Оп. 6. Д. 644",
+  "РГИА. Ф. 24. Оп. 11. Д. 532",
+  "РГИА. Ф. 24. Оп. 7. Д. 36",
+  "РГИА. Ф. 24. Оп. 11. Д. 909",
+  "РГИА. Ф. 24. Оп. 7. Д. 410",
+  "РГИА. Ф. 24. Оп. 4. Д. 196",
+  "РГИА. Ф. 24. Оп. 14. Д. 560",
+  "РГИА. Ф. 24. Оп. 7. Д. 1332",
+  "РГИА. Ф. 24. Оп. 7. Д. 1348",
+  "РГИА. Ф. 24. Оп. 11. Д. 646",
+  "РГИА. Ф. 24. Оп. 7. Д. 239",
 ]
 
 parser = Parser.new()
@@ -396,14 +399,16 @@ parser.read_titles()
 # parser.evaluate_classifier
 # parser.classify
 parser.write_specs(spec_titles)
+
+parser.write_spec_sample(666)
 # parser.write_xls
 # parser.print_warnings
 # parser.print_citizenship_stats
 # parser.write_yaml_by_author_stat
-# parser.print_subject_stats
+parser.print_subject_stats
 # parser.print_company_stats
 # parser.print_title_stats
 # parser.write_classifier_examples(5000)
 # parser.print_token_stats
-# parser.print_author_stats
+parser.print_author_stats
 # parser.print_stats
