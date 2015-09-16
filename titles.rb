@@ -65,7 +65,6 @@ class Title
   FIELDS = ActiveSupport::OrderedHash[
     :duration     , 'Длительность'         ,
     :author_stat  , 'Кол-во авторов'       ,
-    :company_name , 'Имя компании'         ,
     :author1      , 'Автор 1'              ,
     :author2      , 'Автор 2'              ,
     :author3      , 'Автор 3'              ,
@@ -80,7 +79,6 @@ class Title
     :date_range   , 'Крайние даты'         ,
     :end_year     , 'Дата окончания'       ,
     :code         , 'Архивный шифр'        ,
-    :stripped_subject_with_authors, 'Очищенный заголовок',
     :title        , 'Заголовок'            ,
     # :warnings_s   , 'Проблемы'             ,
   ]
@@ -221,42 +219,42 @@ class Title
     end
   end
 
-  # def citizenship
-  #   citizenship = parsed_subject_tokens[:citizenship].to_a
-  #   if citizenship.empty?
-  #     ['Российский подданный']
-  #   else
-  #     citizenship
-  #   end
-  # end
+  def citizenship
+    citizenship = authors.flat_map{ |a| a.tags_for(:citizenship) }.uniq.to_a
+    if citizenship.empty?
+      ['Российский подданный']
+    else
+      citizenship
+    end
+  end
 
-  # def citizenship_s
-  #   citizenship.join(', ')
-  # end
+  def citizenship_s
+    citizenship.join(', ')
+  end
 
-  # def occupation
-  #   parsed_subject_tokens[:occupation].to_a
-  # end
+  def occupation
+    authors.flat_map{ |a| a.tags_for(:occupation) }.uniq.to_a
+  end
 
-  # def occupation_s
-  #   occupation.join(', ')
-  # end
+  def occupation_s
+    occupation.join(', ')
+  end
 
-  # def position
-  #   parsed_subject_tokens[:position].to_a
-  # end
+  def position
+    authors.flat_map{ |a| a.tags_for(:position) }.uniq.to_a
+  end
 
-  # def position_s
-  #   position.join(', ')
-  # end
+  def position_s
+    position.join(', ')
+  end
 
-  # def location
-  #   parsed_subject_tokens[:location].to_a
-  # end
+  def location
+    authors.flat_map{ |a| a.tags_for(:location) }.uniq.to_a
+  end
 
-  # def location_s
-  #   location.join(', ')
-  # end
+  def location_s
+    location.join(', ')
+  end
 
 
   def subject_tokens

@@ -12,6 +12,10 @@ class Author
   def fill_from_next(n)
   end
 
+  def tags_for(type)
+    tag_tokens.select{ |t| t.type == type }.map(&:value)
+  end
+
 end
 
 
@@ -78,7 +82,14 @@ class Person < Author
 
   def lemmatize(surname)
     @petrovich ||= Petrovich.new(:male )
-    @petrovich.lastname(surname.strip, :nominative, :dative) + ' '
+    surname.strip.split('-').map do |s|
+      if s.size <= 2
+        s
+      else
+        nom = @petrovich.lastname(s, :nominative, :dative)
+        nom[-1, 1] == 'я' ? s : nom
+      end
+    end.join('-') + ' '
   end
 
   def full_name
@@ -158,6 +169,9 @@ class Company < Author
     name_tokens.map do |token|
       if token.type == :company_type && !name_started
         token.value + ' '
+      elsif !name_started && \
+            token.type.in?([:occupation, :position, :citizenship, :location])
+        ''
       elsif token.type != :open_quote
         name_started = true
         token.matched
@@ -213,7 +227,7 @@ class AuthorParser
     return unless @person == authors.last
     person = authors.pop
     reset_author
-    if person.present?
+    unless person.nil?
       company.add_name_token(*person.name_tokens)
       company.add_tag_tokens(person.tag_tokens)
     end

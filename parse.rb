@@ -401,7 +401,7 @@ parser.read_titles()
 parser.write_specs(spec_titles)
 
 parser.write_spec_sample(666)
-# parser.write_xls
+parser.write_xls
 # parser.print_warnings
 # parser.print_citizenship_stats
 # parser.write_yaml_by_author_stat
