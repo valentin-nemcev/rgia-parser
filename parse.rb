@@ -168,17 +168,17 @@ class Parser
     records = book.create_worksheet :name => 'Все записи'
     write_titles_xls(titles, records)
 
-    titles
-      .group_by(&:author_stat)
-      .to_a.sort_by(&:first)
-      .each do |author_stat, titles|
-        sheet = book.create_worksheet :name => author_stat.to_s
-        write_titles_xls(titles, sheet)
-      end
+    # titles
+    #   .group_by(&:author_stat)
+    #   .to_a.sort_by(&:first)
+    #   .each do |author_stat, titles|
+    #     sheet = book.create_worksheet :name => author_stat.to_s
+    #     write_titles_xls(titles, sheet)
+    #   end
 
 
-    invalid_records = book.create_worksheet :name => 'Проблемные записи'
-    write_titles_xls(titles.invalid_titles, invalid_records)
+    # invalid_records = book.create_worksheet :name => 'Проблемные записи'
+    # write_titles_xls(titles.invalid_titles, invalid_records)
 
     categories = book.create_worksheet :name => 'Отрасли производства'
     categories.row(0).replace ['Номер', 'Отрасль', 'Кол-во записей']
@@ -189,6 +189,7 @@ class Parser
       )
     end
     auto_width(categories.column(1))
+
     authors = book.create_worksheet :name => 'Авторы'
     authors.row(0).replace ['Кол-во авторов', 'Кол-во записей']
     author_stats = titles.each_with_object(Hash.new(0)) do |title, c|
@@ -203,6 +204,28 @@ class Parser
       end
     auto_width(authors.column(0))
     book.write 'out/records.xls'
+  end
+
+
+  def write_xls_final
+    puts 'Writing out/records_final.xls'
+    book = Spreadsheet::Workbook.new
+
+    records = book.create_worksheet :name => 'Все записи'
+
+    records.row(0).replace Title::FINAL_FIELDS.values
+
+    row_num = 1
+    titles.each do |title|
+      title.final_rows.each do |row|
+        records.row(row_num).replace row
+        row_num += 1
+      end
+    end
+
+    (0...Title::FIELDS.length).each { |i| auto_width(records.column(i)) }
+
+    book.write 'out/records_final.xls'
   end
 
 
@@ -397,11 +420,12 @@ parser.read_classifier_categories
 parser.read_classifier_examples
 parser.read_titles()
 # parser.evaluate_classifier
-# parser.classify
+parser.classify
 parser.write_specs(spec_titles)
 
-parser.write_spec_sample(666)
-parser.write_xls
+# parser.write_spec_sample(666)
+# parser.write_xls
+parser.write_xls_final
 # parser.print_warnings
 # parser.print_citizenship_stats
 # parser.write_yaml_by_author_stat

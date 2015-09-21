@@ -43,25 +43,6 @@ class Title
     self
   end
 
-  # FIELDS = ActiveSupport::OrderedHash[
-  #   :author_name        , 'Имя автора изобретения',
-  #   :author_patronymic  , 'Отчество автора изобретения',
-  #   :author             , 'Фамилия автора изобретения',
-  #   :author_initials    , 'Инициалы автора изобретения',
-  #   :trustee_name       , 'Имя доверенного лица',
-  #   :trustee_patronymic , 'Отчество доверенного лица',
-  #   :trustee_surname    , 'Фамилия доверенного лица',
-  #   :trustee_initials   , 'Инициалы доверенного лица',
-  #   :title              , 'Заголовок',
-  #   :cert_num           , '№ свидетельства',
-  #   :date_range         , 'Крайние даты',
-  #   :end_year           , 'Дата окончания',
-  #   :code               , 'Архивный шифр',
-  #   :notes              , 'Замечания',
-  #   :tags_str           , 'Классификаторы',
-  # ]
-
-
   FIELDS = ActiveSupport::OrderedHash[
     :duration     , 'Длительность'         ,
     :author_stat  , 'Кол-во авторов'       ,
@@ -426,6 +407,65 @@ class Title
     }
   end
   memoize :to_spec
+
+  FINAL_FIELDS = ActiveSupport::OrderedHash[
+    :author_name        , 'Имя автора изобретения',
+    :author_patronymic  , 'Отчество автора изобретения',
+    :author             , 'Фамилия автора изобретения',
+    :author_initials    , 'Инициалы автора изобретения',
+    :trustee_name       , 'Имя доверенного лица',
+    :trustee_patronymic , 'Отчество доверенного лица',
+    :trustee_surname    , 'Фамилия доверенного лица',
+    :trustee_initials   , 'Инициалы доверенного лица',
+    :title              , 'Заголовок',
+    :cert_num           , '№ свидетельства',
+    :date_range         , 'Крайние даты',
+    :end_year           , 'Дата окончания',
+    :code               , 'Архивный шифр',
+    :notes              , 'Замечания',
+    :tags_str           , 'Классификаторы',
+  ]
+
+  AUTHOR_FINAL_FIELDS = [
+    :author_name,
+    :author_patronymic,
+    :author,
+    :author_initials,
+  ]
+  SKIP_FINAL_FIELS = [
+    :trustee_name,
+    :trustee_patronymic,
+    :trustee_surname,
+    :trustee_initials,
+  ]
+
+  TITLE_FINAL_FIELDS = [
+    :title,
+    :cert_num,
+    :date_range,
+    :end_year,
+    :code,
+    :notes,
+    :tags_str,
+  ]
+
+  def notes
+  end
+
+  def tags_str
+    ([category.to_s].reject(&:blank?) + citizenship + position + occupation + location)
+      .join(',~')
+  end
+
+  EMPTY_AUTHOR = Person.new()
+  def final_rows
+    authors = self.authors.present? ? self.authors : [EMPTY_AUTHOR]
+    authors.map do |author|
+      AUTHOR_FINAL_FIELDS.map{ |f| author.send(f) } +
+        SKIP_FINAL_FIELS.map{ |f| nil } +
+        TITLE_FINAL_FIELDS.map{ |f| self.send(f) }
+    end
+  end
 
 end
 

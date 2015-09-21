@@ -92,19 +92,26 @@ class Person < Author
     end.join('-') + ' '
   end
 
-  def full_name
+  def full_name_tokens
     surname_word = self.surname_word
-    values = if surname_word.present?
+    if surname_word.present?
       name_tokens
         .select{ |t| t.type.in? [:initial, :proper_name, :word] }
         .map do |t|
           value = t == surname_word ? Unicode::capitalize(t.value) : t.value
-          t.type != :initial ? lemmatize(value) : value
+          value = t.type != :initial ? lemmatize(value) : value
+          Token.new(t.type == :initial ? :initial : :proper_name, nil, value)
         end
     else
-      name_chunk.map{ |t| t.type != :initial ? lemmatize(t.value) : t.value }
+      name_chunk.map do |t|
+        value = t.type != :initial ? lemmatize(t.value) : t.value
+        Token.new(t.type, nil, value)
+      end
     end
-    values.join('')
+  end
+
+  def full_name
+    full_name_tokens.map(&:value).join('')
   end
 
   def empty?
@@ -129,6 +136,23 @@ class Person < Author
     if next_author.initials_before_surname?
       self.insert_name_tokens_after_initials(next_author.proper_name_tokens)
     end
+  end
+
+
+  def author
+    full_name_tokens.select{ |t| t.type == :proper_name }.map(&:value).join('')
+  end
+
+  def author_initials
+    full_name_tokens.select{ |t| t.type == :initial }.map(&:value).join('')
+  end
+
+  def author_name
+    ''
+  end
+
+  def author_patronymic
+    ''
   end
 
 end
@@ -179,6 +203,22 @@ class Company < Author
         token.matched
       end
     end.join('').strip
+  end
+
+  def author
+    full_name
+  end
+
+  def author_initials
+    ''
+  end
+
+  def author_name
+    ''
+  end
+
+  def author_patronymic
+    ''
   end
 
 end
