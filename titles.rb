@@ -27,43 +27,9 @@ class Title
 
   extend Memoist
 
-  def warnings
-    @warnings = []
-    validate
-    @warnings
-  end
-  memoize :warnings
 
-  def warnings_s
-    warnings.join(', ')
-  end
 
-  def warn(msg)
-    @warnings << msg
-    self
-  end
-
-  FIELDS = ActiveSupport::OrderedHash[
-    :duration     , 'Длительность'         ,
-    :author_stat  , 'Кол-во авторов'       ,
-    :author1      , 'Автор 1'              ,
-    :author2      , 'Автор 2'              ,
-    :author3      , 'Автор 3'              ,
-    :author4      , 'Автор 4'              ,
-    :author5      , 'Автор 5'              ,
-    :citizenship_s, 'Подданство'           ,
-    :occupation_s , 'Профессия'            ,
-    :position_s   , 'Сословие/чин'         ,
-    :location_s   , 'Местоположение'       ,
-    :category_s   , 'Отрасль производства' ,
-    :cert_num     , '№ свидетельства'      ,
-    :date_range   , 'Крайние даты'         ,
-    :end_year     , 'Дата окончания'       ,
-    :code         , 'Архивный шифр'        ,
-    :title        , 'Заголовок'            ,
-    # :warnings_s   , 'Проблемы'             ,
-  ]
-
+  # Source lines
 
   attr_reader :lines
 
@@ -75,197 +41,21 @@ class Title
     @lines << line
   end
 
-
-  def category=(cat)
-    @category = cat
+  def full_str
+    @full_str ||= @lines.join("\n").squeeze(' ')
   end
+  memoize :full_str
 
-  def category_s
-    category.to_s
+
+
+  # Title
+
+  def title
+    lines.first
+      .sub(CERT_NUM_PARENS_REGEX, '')
+      .sub(/[\s.]*$/, '')
   end
-
-  def category
-    @category || classifier_category
-  end
-
-  def classifier_category
-    categories.first
-  end
-
-  def classified_correctly?
-    @category == classifier_category
-  end
-
-  def categories
-    category_scores.map(&:second)
-  end
-
-  def category_scores
-    @category_scores || []
-  end
-
-  def category_scores=(scores)
-    @category_scores = scores.take(3).map do |category, score|
-      [Math.log(score), category]
-    end
-  end
-
-
-  def category_best_score
-    category_scores.first[0]
-  end
-
-
-  def confidence_score
-    scores = category_scores.take(2).map(&:first)
-    scores.first - scores.last
-  end
-  memoize :confidence_score
-
-
-  def needs_classification?
-    @category.nil? && object.present?
-  end
-
-
-  CODE_REGEX = /^(ргиа\.?\s*)?ф\.?\s*\d+ .*? $/xi
-  def code
-    CODE_REGEX.match(full_str) do |m|
-      return m[0].sub(/[\s.]*$/, '')
-    end
-  end
-  memoize :code
-
-
-  def date_range
-    dates[:range]
-  end
-
-
-  def end_year
-    dates[:end_year]
-  end
-
-
-  DATES_REGEX = /
-    ^\s*
-    (?<range>
-      (\d+ \s* \p{Alpha}+ \s* \d+)?
-      [\p{P}\s]*?
-      (\d+ \s* \p{Alpha}+ \s*)? (?<end_year>\d{4})
-    )
-    [\s.]*
-    $
-  /xui
-  def dates
-    DATES_REGEX.match(full_str).to_h
-  end
-  memoize :dates
-
-
-  def cert_num
-    cert_num_parens
-  end
-
-
-  CERT_NUM_PARENS_REGEX = /
-    \(\s* (?:привилегия|патент) .*? (\d+) \)[\s.]*
-  /xi
-
-  def cert_num_parens
-    CERT_NUM_PARENS_REGEX.match(full_str) do |m|
-      return m[1]
-    end
-  end
-  memoize :cert_num_parens
-
-
-  def author_stat
-    author_count = 0
-    company_count = 0
-    authors.each do |a|
-      if a.kind_of? Person
-        author_count += 1
-      else
-        company_count += 1
-      end
-    end
-    "#{company_count + author_count} C#{company_count} A#{author_count}"
-  end
-
-
-  (1..5).each do |i|
-    define_method("author#{i}") do
-      authors[i - 1].try(:full_name)
-    end
-  end
-
-  def citizenship
-    citizenship = authors.flat_map{ |a| a.tags_for(:citizenship) }.uniq.to_a
-    if citizenship.empty?
-      ['Российский подданный']
-    else
-      citizenship
-    end
-  end
-
-  def citizenship_s
-    citizenship.join(', ')
-  end
-
-  def occupation
-    authors.flat_map{ |a| a.tags_for(:occupation) }.uniq.to_a
-  end
-
-  def occupation_s
-    occupation.join(', ')
-  end
-
-  def position
-    authors.flat_map{ |a| a.tags_for(:position) }.uniq.to_a
-  end
-
-  def position_s
-    position.join(', ')
-  end
-
-  def location
-    authors.flat_map{ |a| a.tags_for(:location) }.uniq.to_a
-  end
-
-  def location_s
-    location.join(', ')
-  end
-
-
-  def subject_tokens
-    SubjectTokenizer.new(parsed_title[:subject].to_s).tokenize
-  end
-  memoize :subject_tokens
-
-
-  def authors
-    AuthorParser.new(subject_tokens).parse
-  end
-  memoize :authors
-
-
-  def subject
-    parsed_title[:subject]
-  end
-
-
-  def object
-    parsed_title[:object].try{ |t| t.gsub(/s+/, ' ')}
-  end
-  memoize :object
-
-
-  def duration
-    parsed_title[:duration].try{ |t| t.strip }
-  end
-  memoize :duration
-
+  memoize :title
 
   PARSED_TITLE_REGEXES = [
     /
@@ -312,20 +102,200 @@ class Title
   end
   memoize :parsed_title
 
-
-  def title
-    lines.first
-      .sub(CERT_NUM_PARENS_REGEX, '')
-      .sub(/[\s.]*$/, '')
+  def subject
+    parsed_title[:subject]
   end
-  memoize :title
 
-
-  def full_str
-    @full_str ||= @lines.join("\n").squeeze(' ')
+  def object
+    parsed_title[:object].try{ |t| t.gsub(/s+/, ' ')}
   end
-  memoize :full_str
+  memoize :object
 
+  def duration
+    parsed_title[:duration].try{ |t| t.strip }
+  end
+  memoize :duration
+
+
+
+  # Code, date & cert. num
+
+  CODE_REGEX = /^(ргиа\.?\s*)?ф\.?\s*\d+ .*? $/xi
+  def code
+    CODE_REGEX.match(full_str) do |m|
+      return m[0].sub(/[\s.]*$/, '')
+    end
+  end
+  memoize :code
+
+
+  def date_range
+    dates[:range]
+  end
+
+  def end_year
+    dates[:end_year]
+  end
+
+  DATES_REGEX = /
+    ^\s*
+    (?<range>
+      (\d+ \s* \p{Alpha}+ \s* \d+)?
+      [\p{P}\s]*?
+      (\d+ \s* \p{Alpha}+ \s*)? (?<end_year>\d{4})
+    )
+    [\s.]*
+    $
+  /xui
+
+  def dates
+    DATES_REGEX.match(full_str).to_h
+  end
+  memoize :dates
+
+
+  def cert_num
+    cert_num_parens
+  end
+
+  CERT_NUM_PARENS_REGEX = /
+    \(\s* (?:привилегия|патент) .*? (\d+) \)[\s.]*
+  /xi
+
+  def cert_num_parens
+    CERT_NUM_PARENS_REGEX.match(full_str) do |m|
+      return m[1]
+    end
+  end
+  memoize :cert_num_parens
+
+
+
+  # Subject parsing
+
+  def subject_tokens
+    SubjectTokenizer.new(parsed_title[:subject].to_s).tokenize
+  end
+  memoize :subject_tokens
+
+
+  def authors
+    AuthorParser.new(subject_tokens).parse
+  end
+  memoize :authors
+
+
+
+  # Category
+
+  def category=(cat)
+    @category = cat
+  end
+
+  def category_s
+    category.to_s
+  end
+
+  def category
+    @category || classifier_category
+  end
+
+  def classifier_category
+    categories.first
+  end
+
+  def classified_correctly?
+    @category == classifier_category
+  end
+
+  def categories
+    category_scores.map(&:second)
+  end
+
+  def category_scores
+    @category_scores || []
+  end
+
+  def category_scores=(scores)
+    @category_scores = scores.take(3).map do |category, score|
+      [Math.log(score), category]
+    end
+  end
+
+  def category_best_score
+    category_scores.first[0]
+  end
+
+  def category_confidence_score
+    scores = category_scores.take(2).map(&:first)
+    scores.first - scores.last
+  end
+  memoize :category_confidence_score
+
+  def needs_classification?
+    @category.nil? && object.present?
+  end
+
+
+
+  # Tags
+
+  def citizenship
+    citizenship = authors.flat_map{ |a| a.tags_for(:citizenship) }.uniq.to_a
+    if citizenship.empty?
+      ['Российский подданный']
+    else
+      citizenship
+    end
+  end
+
+  def citizenship_s
+    citizenship.join(', ')
+  end
+
+  def occupation
+    authors.flat_map{ |a| a.tags_for(:occupation) }.uniq.to_a
+  end
+
+  def occupation_s
+    occupation.join(', ')
+  end
+
+  def position
+    authors.flat_map{ |a| a.tags_for(:position) }.uniq.to_a
+  end
+
+  def position_s
+    position.join(', ')
+  end
+
+  def location
+    authors.flat_map{ |a| a.tags_for(:location) }.uniq.to_a
+  end
+
+  def location_s
+    location.join(', ')
+  end
+
+
+
+  # Warnings
+
+  def warnings
+    @warnings = []
+    validate
+    @warnings
+  end
+  memoize :warnings
+
+  def warnings_s
+    warnings.join(', ')
+  end
+
+  def warn(msg)
+    @warnings << msg
+    self
+  end
 
   def validate
     validate_line_count
@@ -364,6 +334,51 @@ class Title
   end
 
 
+
+  # Intermediate fields
+
+  FIELDS = ActiveSupport::OrderedHash[
+    :duration     , 'Длительность'         ,
+    :author_stat  , 'Кол-во авторов'       ,
+    :author1      , 'Автор 1'              ,
+    :author2      , 'Автор 2'              ,
+    :author3      , 'Автор 3'              ,
+    :author4      , 'Автор 4'              ,
+    :author5      , 'Автор 5'              ,
+    :citizenship_s, 'Подданство'           ,
+    :occupation_s , 'Профессия'            ,
+    :position_s   , 'Сословие/чин'         ,
+    :location_s   , 'Местоположение'       ,
+    :category_s   , 'Отрасль производства' ,
+    :cert_num     , '№ свидетельства'      ,
+    :date_range   , 'Крайние даты'         ,
+    :end_year     , 'Дата окончания'       ,
+    :code         , 'Архивный шифр'        ,
+    :title        , 'Заголовок'            ,
+    # :warnings_s   , 'Проблемы'             ,
+  ]
+
+
+  def author_stat
+    author_count = 0
+    company_count = 0
+    authors.each do |a|
+      if a.kind_of? Person
+        author_count += 1
+      else
+        company_count += 1
+      end
+    end
+    "#{company_count + author_count} C#{company_count} A#{author_count}"
+  end
+
+
+  (1..5).each do |i|
+    define_method("author#{i}") do
+      authors[i - 1].try(:full_name)
+    end
+  end
+
   def to_row
     FIELDS.keys.map do |field|
       send field
@@ -371,13 +386,16 @@ class Title
   end
   memoize :to_row
 
+
+
+  # YAML fields
+
   def categories_dbg
     "\n" + category_scores.map do |score, category|
       [score.round(4), category.to_s].join(' ')
     end.join("\n")
   end
   memoize :categories_dbg
-
 
   def subject_tokens_yaml
     subject_tokens.map(&:to_yaml)
@@ -407,6 +425,10 @@ class Title
     }
   end
   memoize :to_spec
+
+
+
+  # Final fields
 
   FINAL_FIELDS = ActiveSupport::OrderedHash[
     :author_name        , 'Имя автора изобретения',
@@ -584,7 +606,7 @@ class Titles
   def with_worst_category_scores(n)
     titles
     .select(&:needs_classification?)
-    .sort_by(&:confidence_score).first(n)
+    .sort_by(&:category_confidence_score).first(n)
   end
 
   def categories_stats
