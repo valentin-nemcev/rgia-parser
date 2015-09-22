@@ -22,6 +22,96 @@ class MatchData
 end
 
 
+module Authors
+
+  def author_stat
+    author_count = 0
+    company_count = 0
+    authors.each do |a|
+      if a.person?
+        author_count += 1
+      else
+        company_count += 1
+      end
+    end
+    "#{company_count + author_count} C#{company_count} A#{author_count}"
+  end
+
+
+  (1..5).each do |i|
+    define_method("author#{i}") do
+      authors[i - 1].try(:full_name)
+    end
+  end
+
+end
+
+
+module FinalFields
+
+  FINAL_FIELDS = ActiveSupport::OrderedHash[
+    :author_name        , 'Имя автора изобретения',
+    :author_patronymic  , 'Отчество автора изобретения',
+    :author             , 'Фамилия автора изобретения',
+    :author_initials    , 'Инициалы автора изобретения',
+    :trustee_name       , 'Имя доверенного лица',
+    :trustee_patronymic , 'Отчество доверенного лица',
+    :trustee_surname    , 'Фамилия доверенного лица',
+    :trustee_initials   , 'Инициалы доверенного лица',
+    :title              , 'Заголовок',
+    :cert_num           , '№ свидетельства',
+    :date_range         , 'Крайние даты',
+    :end_year           , 'Дата окончания',
+    :code               , 'Архивный шифр',
+    :notes              , 'Замечания',
+    :tags_str           , 'Классификаторы',
+  ]
+
+  AUTHOR_FINAL_FIELDS = [
+    :author_name,
+    :author_patronymic,
+    :author,
+    :author_initials,
+  ]
+  SKIP_FINAL_FIELS = [
+    :trustee_name,
+    :trustee_patronymic,
+    :trustee_surname,
+    :trustee_initials,
+  ]
+
+  TITLE_FINAL_FIELDS = [
+    :title,
+    :cert_num,
+    :date_range,
+    :end_year,
+    :code,
+    :notes,
+    :tags_str,
+  ]
+
+  def notes
+  end
+
+  def tags_str
+    ((category.try(:with_parents) || []).map(&:to_s) \
+     + citizenship + position + occupation + location)
+      .join(',~')
+  end
+
+  EMPTY_AUTHOR = Person.new()
+  def final_rows
+    authors = self.authors.present? ? self.authors : [EMPTY_AUTHOR]
+    authors.map do |author|
+      AUTHOR_FINAL_FIELDS.map{ |f| author.send(f) } +
+        SKIP_FINAL_FIELS.map{ |f| nil } +
+        TITLE_FINAL_FIELDS.map{ |f| self.send(f) }
+    end
+  end
+
+end
+
+require_relative 'manual_titles'
 
 class Title
 
@@ -338,6 +428,7 @@ class Title
   # Intermediate fields
 
   FIELDS = ActiveSupport::OrderedHash[
+    :is_manual_s  , 'Корректировка'        ,
     :duration     , 'Длительность'         ,
     :author_stat  , 'Кол-во авторов'       ,
     :author1      , 'Автор 1'              ,
@@ -358,26 +449,15 @@ class Title
     # :warnings_s   , 'Проблемы'             ,
   ]
 
-
-  def author_stat
-    author_count = 0
-    company_count = 0
-    authors.each do |a|
-      if a.kind_of? Person
-        author_count += 1
-      else
-        company_count += 1
-      end
-    end
-    "#{company_count + author_count} C#{company_count} A#{author_count}"
+  def is_manual
+    false
   end
 
-
-  (1..5).each do |i|
-    define_method("author#{i}") do
-      authors[i - 1].try(:full_name)
-    end
+  def is_manual_s
+    nil
   end
+
+  include Authors
 
   def to_row
     FIELDS.keys.map do |field|
@@ -428,66 +508,7 @@ class Title
 
 
 
-  # Final fields
-
-  FINAL_FIELDS = ActiveSupport::OrderedHash[
-    :author_name        , 'Имя автора изобретения',
-    :author_patronymic  , 'Отчество автора изобретения',
-    :author             , 'Фамилия автора изобретения',
-    :author_initials    , 'Инициалы автора изобретения',
-    :trustee_name       , 'Имя доверенного лица',
-    :trustee_patronymic , 'Отчество доверенного лица',
-    :trustee_surname    , 'Фамилия доверенного лица',
-    :trustee_initials   , 'Инициалы доверенного лица',
-    :title              , 'Заголовок',
-    :cert_num           , '№ свидетельства',
-    :date_range         , 'Крайние даты',
-    :end_year           , 'Дата окончания',
-    :code               , 'Архивный шифр',
-    :notes              , 'Замечания',
-    :tags_str           , 'Классификаторы',
-  ]
-
-  AUTHOR_FINAL_FIELDS = [
-    :author_name,
-    :author_patronymic,
-    :author,
-    :author_initials,
-  ]
-  SKIP_FINAL_FIELS = [
-    :trustee_name,
-    :trustee_patronymic,
-    :trustee_surname,
-    :trustee_initials,
-  ]
-
-  TITLE_FINAL_FIELDS = [
-    :title,
-    :cert_num,
-    :date_range,
-    :end_year,
-    :code,
-    :notes,
-    :tags_str,
-  ]
-
-  def notes
-  end
-
-  def tags_str
-    ([category.to_s].reject(&:blank?) + citizenship + position + occupation + location)
-      .join(',~')
-  end
-
-  EMPTY_AUTHOR = Person.new()
-  def final_rows
-    authors = self.authors.present? ? self.authors : [EMPTY_AUTHOR]
-    authors.map do |author|
-      AUTHOR_FINAL_FIELDS.map{ |f| author.send(f) } +
-        SKIP_FINAL_FIELS.map{ |f| nil } +
-        TITLE_FINAL_FIELDS.map{ |f| self.send(f) }
-    end
-  end
+  include FinalFields
 
 end
 
@@ -531,6 +552,18 @@ class Titles
 
     current_title.parse_line(line)
     next_title if TITLE_END_REGEP.match(line)
+  end
+
+
+  def add_manual_title(title_hash)
+    manual_title = ManualTitle.from_hash(title_hash, classifier_categories)
+    i = titles.find_index{ |t| t.code == manual_title.code}
+    if i.nil?
+      puts "Unknown manual title: #{manual_title.code}"
+      titles.push manual_title
+    else
+      titles[i] = manual_title
+    end
   end
 
 
@@ -580,6 +613,7 @@ class Titles
       title
     end
     titles.replace classified
+    titles.each{ |t| t.category.try{ |c| c.set_parents(classifier_categories) } }
   end
 
   def evaluate_classifier(classifier)

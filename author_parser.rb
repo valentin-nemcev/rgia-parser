@@ -23,6 +23,10 @@ class Person < Author
   attr_accessor :initials_before_surname
   attr_reader :name_tokens
 
+  def person?
+    true
+  end
+
   def initialize
     @name_tokens = []
   end
@@ -161,6 +165,11 @@ end
 class Company < Author
 
   attr_reader :name_tokens, :tag_tokens
+
+  def person?
+    false
+  end
+
   def initialize
     @name_tokens = []
     @tag_tokens = []

@@ -147,6 +147,24 @@ class Parser
   end
 
 
+  def read_manual_titles_xls
+    puts "Reading manually processed titles from in/titles_manual.xls"
+    book = Spreadsheet.open 'in/titles_manual.xls'
+    worksheet = book.worksheet 'Корректировка'
+    fields_inv = ManualTitle::FIELDS.invert
+    headers = worksheet.row(0).map do |h|
+      fail "Unknown header: #{h}" unless fields_inv.key?(h)
+      fields_inv[h]
+    end
+    count = 0
+    worksheet.each 1 do |row|
+      count += 1
+      titles.add_manual_title Hash[headers.zip(row)]
+    end
+    puts "Manually processed titles read: #{count}"
+  end
+
+
   def auto_width(column)
     w = column.drop(1).map{ |c| c.try(:length) }.compact.max
     return if w.nil?
@@ -419,20 +437,21 @@ parser = Parser.new()
 parser.read_classifier_categories
 parser.read_classifier_examples
 parser.read_titles()
+parser.write_specs(spec_titles)
+parser.read_manual_titles_xls()
 # parser.evaluate_classifier
 parser.classify
-parser.write_specs(spec_titles)
 
 # parser.write_spec_sample(666)
-# parser.write_xls
+parser.write_xls
 parser.write_xls_final
 # parser.print_warnings
 # parser.print_citizenship_stats
 # parser.write_yaml_by_author_stat
-parser.print_subject_stats
+# parser.print_subject_stats
 # parser.print_company_stats
 # parser.print_title_stats
 # parser.write_classifier_examples(5000)
 # parser.print_token_stats
-parser.print_author_stats
+# parser.print_author_stats
 # parser.print_stats

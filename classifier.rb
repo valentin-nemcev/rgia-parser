@@ -27,6 +27,17 @@ class Category
     number.hash
   end
 
+  attr_reader :parents
+  def set_parents(categories)
+    @parents = number.split('.').slice(0...-1)
+      .reduce([]) { |nums, num| nums << [nums.last, num].compact.join('.') }
+      .map{ |n| categories[n] }
+  end
+
+  def with_parents
+    parents + [self]
+  end
+
   def to_s
     title
   end
