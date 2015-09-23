@@ -312,8 +312,12 @@ class SubjectTokenizer
           tokens << Token.new(:word, scanner.matched)
           throw :next, true
         end
-        if scanner.scan(/\p{punct}+\s*/)
+        if scanner.scan(/[\p{punct}\p{symbol}]+\s*/)
           tokens << Token.new(:punct, scanner.matched)
+          throw :next, true
+        end
+        if scanner.scan(/.\s*/)
+          tokens << Token.new(:unknown, scanner.matched)
           throw :next, true
         end
       end

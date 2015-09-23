@@ -148,7 +148,7 @@ class Title
       (?<duration>на\s\d+\s?(год|года|лет)\s)?
       (привилегии[\p{p}\p{z}]+)?
       (?<subject>.*?)
-      (\s|,)(?:на)\s(?!\d+\s?(год|года|лет)\s)
+      (\s|,|\.)(?:на)\s(?!\d+\s?(год|года|лет)\s)
       (?<object>.*?)
       (?<subject_company>
         [,\s]+передан\p{Alpha}+
@@ -174,7 +174,7 @@ class Title
         return {}
       end
     end
-    PARSED_TITLE_REGEXES.each do |regex|
+    PARSED_TITLE_REGEXES.each_with_index do |regex, i|
       m = regex.match(title)
       next if m.nil?
       return m.to_h.tap do |h|
@@ -243,7 +243,7 @@ class Title
   CODE_REGEX = /^(ргиа\.?\s*)?ф\.?\s*\d+ .*? $/xi
 
   CERT_NUM_PARENS_REGEX = /
-    \(\s* (?:привилегия|патент) .*? (\d+) \)[\s.]*
+    (?:\()? \s* (?:привилегия|патент) \s? [^\s]? \s? (\d+) \s* (?:\))?[\s.]*
   /xi
 
   def parsed_str
@@ -387,39 +387,39 @@ class Title
   # Warnings
 
   def warnings
-    @warnings = []
-    validate
+    if @warnings.nil?
+      @warnings = []
+      validate
+    end
     @warnings
   end
-  memoize :warnings
 
   def warnings_s
     warnings.join(', ')
   end
 
   def warn(msg)
-    @warnings << msg
+    warnings << msg
     self
   end
 
   def validate
     validate_line_count
-    validate_parsed_title
-    validate_authors
-    validate_citizenship
+    unless validate_parsed_title
+      validate_authors
+      validate_subject_tokens
+    end
   end
 
 
   def validate_authors
-    # warn "No authors parsed" if authors.empty? && company_name.blank?
+    warn "No authors parsed" if authors.empty?
     # warn "Suspicious author count" if authors.count > 3
   end
 
-
-  def validate_citizenship
-    warn "Unknown citizenship" if citizenship.include? :unknown
+  def validate_subject_tokens
+    warn "Subject not fully parsed" if subject_tokens.detect{ |t| t.type == :rest }
   end
-
 
   def validate_line_count
     warn "Suspicious line count" unless lines.count.in? 2..4
@@ -475,7 +475,6 @@ class Title
       send field
     end
   end
-  memoize :to_row
 
 
 
@@ -530,7 +529,6 @@ class Titles
   include Enumerable
   extend Forwardable
   def_delegators :@titles, :each, :to_a, :sample, :size
-  def_delegators :titles_hash, :[], :values_at
   attr_reader :titles
   attr_reader :classifier_examples, :classifier_categories
 
@@ -541,11 +539,6 @@ class Titles
     @current_classifier_example = nil
     @classifier_categories = Hash.new
   end
-
-  def titles_hash
-    @titles_hash ||= Hash[titles.map{ |t| [t.code, t]}]
-  end
-
 
   TITLE_END_REGEP = Title::CODE_REGEX
 
@@ -568,12 +561,15 @@ class Titles
 
   def add_manual_title(title_hash)
     manual_title = ManualTitle.from_hash(title_hash, classifier_categories)
-    i = titles.find_index{ |t| t.code == manual_title.code}
-    if i.nil?
-      puts "Unknown manual title: #{manual_title.code}"
+    indexes = titles.each_index.select{ |i| titles[i].code == manual_title.code}
+    if indexes.empty?
+      manual_title.warn "Unknown manual title"
+      titles.push manual_title
+    elsif indexes.many?
+      manual_title.warn "Other titles exist with same code"
       titles.push manual_title
     else
-      titles[i] = manual_title
+      titles[indexes.first] = manual_title
     end
   end
 
@@ -641,6 +637,9 @@ class Titles
   end
 
   def invalid_titles
+    @duplicated_code ||= titles
+      .group_by(&:code).map(&:second).reject(&:one?).flatten
+      .each{ |t| t.warn "Duplicated code" }
     titles.reject(&:valid?)
   end
 

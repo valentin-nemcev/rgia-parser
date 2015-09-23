@@ -70,10 +70,6 @@ class ManualTitle
     t
   end
 
-  def valid?
-    true
-  end
-
   FIELDS = ActiveSupport::OrderedHash[
     :duration     , 'Длительность'         ,
     :author_stat  , 'Кол-во авторов'       ,
@@ -217,8 +213,25 @@ class ManualTitle
     end
   end
 
-  def warnings_s
-    ''
+  def warnings
+    @warnings ||= []
   end
+
+  def warn(msg)
+    warnings << msg
+    self
+  end
+
+  def warnings_s
+    warnings.join(', ')
+  end
+
+  def validate
+  end
+
+  def valid?
+    warnings.empty?
+  end
+
 
 end

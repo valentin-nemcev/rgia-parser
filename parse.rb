@@ -261,8 +261,12 @@ class Parser
   end
 
   def write_specs(title_codes)
-    File.write('out/record_specs.yaml',
-               titles.values_at(*title_codes).map(&:to_spec).to_yaml)
+    File.write(
+      'out/record_specs.yaml',
+      title_codes
+        .flat_map{ |code| titles.select{ |t| t.code == code } }
+        .map(&:to_spec).to_yaml
+    )
   end
 
   def write_spec_sample(seed)
@@ -288,7 +292,7 @@ class Parser
   end
 
   def print_warnings
-    warnings = titles.flat_map(&:warnings)
+    warnings = titles.invalid_titles.flat_map(&:warnings)
     warnings
       .each_with_object(Hash.new(0)) { |w, h| h[w] += 1 }
       .each { |w, count| puts [w, count].join(': ') }
@@ -431,6 +435,9 @@ spec_titles = [
   "РГИА. Ф. 24. Оп. 7. Д. 1348",
   "РГИА. Ф. 24. Оп. 11. Д. 646",
   "РГИА. Ф. 24. Оп. 7. Д. 239",
+  "РГИА. Ф. 24. Оп. 11. Д. 784",
+  "РГИА. Ф. 24. Оп. 4. Д. 484",
+  "РГИА. Ф. 24. Оп.4. Д. 882",
 ]
 
 
@@ -444,9 +451,9 @@ parser.read_manual_titles_xls()
 # parser.classify
 
 # parser.write_spec_sample(666)
-# parser.write_xls
+parser.write_xls
 # parser.write_xls_final
-# parser.print_warnings
+parser.print_warnings
 # parser.print_citizenship_stats
 # parser.write_yaml_by_author_stat
 # parser.print_subject_stats
