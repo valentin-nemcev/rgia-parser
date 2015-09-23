@@ -138,14 +138,7 @@ class Title
 
 
 
-  # Title
-
-  def title
-    lines.first
-      .sub(CERT_NUM_PARENS_REGEX, '')
-      .sub(/[\s.]*$/, '')
-  end
-  memoize :title
+  # Parsed title
 
   PARSED_TITLE_REGEXES = [
     /
@@ -208,15 +201,15 @@ class Title
 
 
 
-  # Code, date & cert. num
+  # Title, code, date & cert. num
 
-  CODE_REGEX = /^(ргиа\.?\s*)?ф\.?\s*\d+ .*? $/xi
-  def code
-    CODE_REGEX.match(full_str) do |m|
-      return m[0].sub(/[\s.]*$/, '')
-    end
+  def title
+    parsed_str[:title]
   end
-  memoize :code
+
+  def code
+    parsed_str[:code]
+  end
 
 
   def date_range
@@ -226,6 +219,15 @@ class Title
   def end_year
     dates[:end_year]
   end
+
+  def dates
+    parsed_str[:dates] || {}
+  end
+
+  def cert_num
+    parsed_str[:cert_num]
+  end
+
 
   DATES_REGEX = /
     ^\s*
@@ -238,26 +240,39 @@ class Title
     $
   /xui
 
-  def dates
-    DATES_REGEX.match(full_str).to_h
-  end
-  memoize :dates
-
-
-  def cert_num
-    cert_num_parens
-  end
+  CODE_REGEX = /^(ргиа\.?\s*)?ф\.?\s*\d+ .*? $/xi
 
   CERT_NUM_PARENS_REGEX = /
     \(\s* (?:привилегия|патент) .*? (\d+) \)[\s.]*
   /xi
 
-  def cert_num_parens
-    CERT_NUM_PARENS_REGEX.match(full_str) do |m|
-      return m[1]
+  def parsed_str
+    result = {}
+    str = full_str.clone
+
+    str.gsub!(CODE_REGEX) do
+      result[:code] = Regexp.last_match[0].sub(/[\s.]*$/, '')
+      ''
     end
+
+    str.gsub!(DATES_REGEX) do
+      result[:dates] = Regexp.last_match.to_h
+      ''
+    end
+
+    str.gsub!(CERT_NUM_PARENS_REGEX) do |m|
+      result[:cert_num] = Regexp.last_match[1]
+      ''
+    end
+
+    str.gsub!(/[\r\n\p{Z}]+/, ' ')
+    str.gsub!(/[\s.]*$/, '')
+
+    result[:title] = str
+
+    return result
   end
-  memoize :cert_num_parens
+  memoize :parsed_str
 
 
 
@@ -411,16 +426,12 @@ class Title
   end
 
   def validate_parsed_title
-    warn "Can't parse title" if title.present? &&title.present? && parsed_title.size == 0
+    warn "Can't parse title" if title.present? && parsed_title.size == 0
   end
 
 
   def valid?
     warnings.empty?
-  end
-
-  def suspicious?
-    subject.present? && (!authors.count.between?(1,4) || authors.any?(&:suspicious?))
   end
 
 
@@ -446,7 +457,7 @@ class Title
     :end_year     , 'Дата окончания'       ,
     :code         , 'Архивный шифр'        ,
     :title        , 'Заголовок'            ,
-    # :warnings_s   , 'Проблемы'             ,
+    :warnings_s   , 'Проблемы'             ,
   ]
 
   def is_manual
@@ -631,10 +642,6 @@ class Titles
 
   def invalid_titles
     titles.reject(&:valid?)
-  end
-
-  def suspicious
-    titles.select(&:suspicious?)
   end
 
   def with_worst_category_scores(n)

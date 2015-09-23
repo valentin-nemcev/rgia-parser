@@ -70,6 +70,9 @@ class ManualTitle
     t
   end
 
+  def valid?
+    true
+  end
 
   FIELDS = ActiveSupport::OrderedHash[
     :duration     , 'Длительность'         ,
@@ -212,6 +215,10 @@ class ManualTitle
     Title::FIELDS.keys.map do |field|
       send field
     end
+  end
+
+  def warnings_s
+    ''
   end
 
 end

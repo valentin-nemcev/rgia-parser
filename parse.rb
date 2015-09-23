@@ -195,8 +195,8 @@ class Parser
     #   end
 
 
-    # invalid_records = book.create_worksheet :name => 'Проблемные записи'
-    # write_titles_xls(titles.invalid_titles, invalid_records)
+    invalid_records = book.create_worksheet :name => 'Проблемные записи'
+    write_titles_xls(titles.invalid_titles, invalid_records)
 
     categories = book.create_worksheet :name => 'Отрасли производства'
     categories.row(0).replace ['Номер', 'Отрасль', 'Кол-во записей']
@@ -420,9 +420,10 @@ spec_titles = [
   "РГИА. Ф. 24. Оп. 6. Д. 189",
   "РГИА. Ф. 24. Оп. 6. Д. 1016",
   "РГИА. Ф. 24. Оп. 6. Д. 644",
+  "РГИА. Ф. 24. Оп. 11. Д. 909",
+  "РГИА. Ф. 24. Оп. 7. Д. 256",
   "РГИА. Ф. 24. Оп. 11. Д. 532",
   "РГИА. Ф. 24. Оп. 7. Д. 36",
-  "РГИА. Ф. 24. Оп. 11. Д. 909",
   "РГИА. Ф. 24. Оп. 7. Д. 410",
   "РГИА. Ф. 24. Оп. 4. Д. 196",
   "РГИА. Ф. 24. Оп. 14. Д. 560",
@@ -440,11 +441,11 @@ parser.read_titles()
 parser.write_specs(spec_titles)
 parser.read_manual_titles_xls()
 # parser.evaluate_classifier
-parser.classify
+# parser.classify
 
 # parser.write_spec_sample(666)
-parser.write_xls
-parser.write_xls_final
+# parser.write_xls
+# parser.write_xls_final
 # parser.print_warnings
 # parser.print_citizenship_stats
 # parser.write_yaml_by_author_stat
