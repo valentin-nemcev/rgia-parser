@@ -41,6 +41,7 @@ citizenships = [
 end
 
 citizenships << [/(?<!\p{Alpha})(иностран\p{Alpha}+)\s*/i, proc {'Иностранец'}]
+citizenships << [/(граждан\p{Alpha}+)\s+(США|С.Ш.А.)\s*/i, proc {'Гражданин США'}]
 
 CITIZENSHIPS = Hash[citizenships]
 
@@ -198,7 +199,11 @@ end
 
 LOCATIONS = [
   [
-    /(жител\p{alpha}+|приписанн\p{alpha}+ к) (города|гор.|г.|д.) (?<name>\p{lu}\p{ll}+)\s*/i,
+    /в (городe|гор.|г.|д. )?(?<name>\p{lu}\p{ll}+)\s*/,
+    proc { |m| m.matched }
+  ],
+  [
+    /(гражданин\p{alpha}|жител\p{alpha}+|приписанн\p{alpha}+ к) (города|гор.|г.|д.) (?<name>\p{lu}\p{ll}+)\s*/i,
     proc { |m| 'г. ' + Unicode::capitalize(m[:name]) }
   ],
   [
@@ -239,22 +244,23 @@ COMPANY_TYPE_QUALIFIERS = [
 ]
 
 PROPER_NAMES = [
+  [/К°/i, proc { 'К°' }],
+  [/(друг\p{alpha}+|др.|прочее)\s*/i, proc { 'другие' }],
   [/
-    (де[\p{Pd}\s]+(л[еая][\p{Pd}\s])?)?
-    (фон[\p{Pd}\s]+(дер[\p{Pd}\s])?)?
-    (д['ˈ])?
+    (\p{Pd}?де[\p{Pd}\s]+(л[еая][\p{Pd}\s])?)?
+    ((ван|фон)[\p{Pd}\s]+(дер[\p{Pd}\s])?)?
+    ([ДдОоМм][׳′'ˈ])?
     \p{Lu}[\p{alpha}\p{Pd}]+
+    (\s\p{Pd}\s\p{Lu}[\p{alpha}\p{Pd}]+)?
     (\s+(Дж.|младш\p{alpha}+))?
     \s*/x, proc { |m| m.matched } ],
-  [/(друг\p{alpha}+|др.|прочее)\s*/i, proc { 'другие' }],
-  [/К°/i, proc { 'К°' }],
 ]
 
 
 CONNECTORS = [
   /и\s+/,
-  /(,)?\s*c передач\p{alpha}+\s*/i,
-  /(,)?\s*передан\p{alpha}+( затем)?( в( совместную)?собственность)?\s*/i,
+  /(,)?\s*с передач\p{alpha}+\s*/i,
+  /(,)?\s*передан\p{alpha}+( затем)?([\p{alpha}\s]*? собственность)?\s*/i,
   /(,)?\s*торгующ\p{alpha}+ под\s*/i,
   /(,)?\s*служащ\p{alpha}+ в\s/i,
   /(,)?\s*совладельц\p{alpha}+\s/i,
@@ -282,7 +288,8 @@ TOKENS = ActiveSupport::OrderedHash[
     [/\p{Pf}\s*/, :matched.to_proc]
   ],
   :initial, [
-    [/\p{L}\p{Ll}?\.\s*/, proc { |m| Unicode::upcase(m.matched).strip + ' ' }]
+    [/\p{L}\p{Ll}?[,.]\s*/, proc { |m| Unicode::upcase(m.matched).strip + ' ' }],
+    [/[\p{lu}&&[^И]]($|\s+)/, proc { |m| m.matched.strip + '. ' }]
   ],
   :proper_name, PROPER_NAMES,
   :connector, CONNECTORS,
@@ -343,6 +350,21 @@ class Token
     @matched = matched
     @value = value || matched
   end
+
+  def unknown?
+    type.in? [:unknown, :word, :punct]
+  end
+
+  def adjective?
+    @matched.match(/^\p{word}{3,}(ому|ой)\s*$/i)
+  end
+
+  def nominative_adjective
+    @matched
+    .gsub(/ому\s*$/, 'ый ')
+    .gsub(/ой\s*$/, 'ая ')
+  end
+
 
   def to_yaml
     [type, matched, value].uniq.compact.join(' | ')

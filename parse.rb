@@ -195,8 +195,11 @@ class Parser
     #   end
 
 
-    invalid_records = book.create_worksheet :name => 'Проблемные записи'
-    write_titles_xls(titles.invalid_titles, invalid_records)
+    titles.invalid_titles.group_by(&:warning_class).sort_by(&:first)
+      .each do |wc, titles|
+        invalid_records = book.create_worksheet :name => "Проблемные записи #{wc}"
+        write_titles_xls(titles, invalid_records)
+      end
 
     categories = book.create_worksheet :name => 'Отрасли производства'
     categories.row(0).replace ['Номер', 'Отрасль', 'Кол-во записей']
@@ -247,9 +250,17 @@ class Parser
   end
 
 
-  def write_yaml
-    File.write('out/records.yml', titles.map(&:to_spec).to_yaml)
-    # print_warnings(warnings)
+  def write_yaml_with_warnings
+    File.write(
+      'out/records_with_warnings.yml',
+      titles.invalid_titles
+        .select{ |t| t.warnings.include? "Name contains unknown tokens" }
+        .select do |t|
+          t.authors.flat_map(&:unknown_tokens).map(&:matched)
+            .any?{ |w| w.match(/^гражданин/i) }
+        end
+        .map(&:to_spec).to_yaml
+    )
   end
 
   def write_yaml_by_author_stat
@@ -292,10 +303,17 @@ class Parser
   end
 
   def print_warnings
-    warnings = titles.invalid_titles.flat_map(&:warnings)
-    warnings
+    w_count = titles.invalid_titles.flat_map(&:warnings)
       .each_with_object(Hash.new(0)) { |w, h| h[w] += 1 }
-      .each { |w, count| puts [w, count].join(': ') }
+
+    c_count = titles.invalid_titles.flat_map(&:warning_class)
+      .each_with_object(Hash.new(0)) { |w, h| h[w] += 1 }
+
+    print_count w_count
+    print_count c_count
+
+
+    puts "Total titles with warnings: #{titles.invalid_titles.count}"
   end
 
   def print_stats
@@ -341,17 +359,25 @@ class Parser
 
 
   def print_subject_stats
-   # titles
-   #    .each{ |t|
-   #      t.authors.each{ |a|
-   #        if a.respond_to?(:surname_word) && a.surname_word.present?
-   #          puts
-   #          puts t.to_spec.to_yaml;
-   #          p t.subject
-   #          p a.surname_word.value
-   #        end
-   #      }
-   #    }
+   unknown_tokens = titles
+      .flat_map{ |t|
+        t.authors.flat_map{ |a|
+          a.unknown_tokens
+        }
+      }
+
+  stemmer = Lingua::Stemmer.new(:language => "ru")
+  count = unknown_tokens
+    .map(&:matched)
+    .map do |s|
+      s.strip
+        .sub(/^[\p{lu}&&[^И]]$/, '[Initial]')
+        .sub(/^\p{word}{3,}(ому|ой)$/i, '[Adjective]')
+    end
+    .map { |w| stemmer.stem(Unicode.downcase(w)) }
+    .each_with_object(Hash.new(0)) { |w, c| c[w] += 1}
+
+  print_count count
 
    # puts titles.select{ |t| (t.subject || '').match(/иностранке|гражданке/) }
    #    .each{ |t|
@@ -438,6 +464,13 @@ spec_titles = [
   "РГИА. Ф. 24. Оп. 11. Д. 784",
   "РГИА. Ф. 24. Оп. 4. Д. 484",
   "РГИА. Ф. 24. Оп.4. Д. 882",
+  "РГИА. Ф. 24. Оп. 7. Д. 242",
+  "РГИА. Ф. 24. Оп. 7. Д. 329",
+  "РГИА. Ф. 24. Оп. 8. Д. 883",
+  "РГИА. Ф. 24. Оп. 12. Д. 947",
+  "РГИА. Ф. 24. Оп. 12. Д. 962",
+  "РГИА. Ф. 24. Оп. 7. Д. 113",
+  "РГИА. Ф. 24. Оп. 5. Д. 498",
 ]
 
 
@@ -448,11 +481,12 @@ parser.read_titles()
 parser.write_specs(spec_titles)
 parser.read_manual_titles_xls()
 # parser.evaluate_classifier
-# parser.classify
+parser.classify
 
 # parser.write_spec_sample(666)
 parser.write_xls
-# parser.write_xls_final
+# parser.write_yaml_with_warnings
+parser.write_xls_final
 parser.print_warnings
 # parser.print_citizenship_stats
 # parser.write_yaml_by_author_stat

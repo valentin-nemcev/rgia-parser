@@ -6,6 +6,10 @@ class ManualPerson
     true
   end
 
+  def unknown_tokens
+    []
+  end
+
   def initialize(full_name)
     @full_name = full_name
   end
@@ -34,6 +38,10 @@ class ManualCompany
 
   def person?
     false
+  end
+
+  def unknown_tokens
+    []
   end
 
   def initialize(full_name)
@@ -215,6 +223,10 @@ class ManualTitle
 
   def warnings
     @warnings ||= []
+  end
+
+  def warning_class
+    'C' unless valid?
   end
 
   def warn(msg)

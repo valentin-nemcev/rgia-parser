@@ -44,11 +44,13 @@ class Person < Author
   end
 
   def insert_name_tokens_before_initials(tokens)
+    @reused_name_tokens = true
     i = name_tokens.index(name_chunk.first)
     name_tokens.insert(i, *tokens) unless i.nil?
   end
 
   def insert_name_tokens_after_initials(tokens)
+    @reused_name_tokens = true
     i = name_tokens.index(name_chunk.last) + 1
     name_tokens.insert(i, *tokens) unless i.nil?
   end
@@ -76,6 +78,10 @@ class Person < Author
 
   def initial_tokens
     name_tokens.select{ |t| t.type == :initial }
+  end
+
+  def unknown_tokens
+    name_tokens.select(&:unknown?).reject{ |t| t == surname_word }
   end
 
   def surname_word
@@ -122,10 +128,6 @@ class Person < Author
     name_chunk.empty?
   end
 
-  def suspicious?
-    name_chunk.select{ |t| t.type == :proper_name }.count != 1
-  end
-
   def fill_from_prev(prev_author)
     return unless prev_author.kind_of?(Person) && proper_name_tokens.empty?
 
@@ -140,6 +142,19 @@ class Person < Author
     if next_author.initials_before_surname?
       self.insert_name_tokens_after_initials(next_author.proper_name_tokens)
     end
+  end
+
+
+  def validate(title)
+    if unknown_tokens.present?
+      title.warn "Name contains unknown tokens"
+    end
+
+    title.warn "Possible inflection problems" if @reused_name_tokens
+    if name_chunk.chunk(&:type).count > 2
+      title.warn "Suspicious initial ordering"
+    end
+    title.warn "Missing surname" if author.blank?
   end
 
 
@@ -163,6 +178,8 @@ end
 
 
 class Company < Author
+
+  extend Memoist
 
   attr_reader :name_tokens, :tag_tokens
 
@@ -188,30 +205,58 @@ class Company < Author
     name_tokens.find{ |t| t.type == :company_type }
   end
 
-  def suspicious?
-    type.blank?
-  end
-
   def empty?
     name_tokens.empty?
   end
 
-
   def full_name
+    full_name_with_type[:name]
+  end
+
+  def unknown_tokens
+    full_name_with_type[:unknown_tokens]
+  end
+
+
+  def full_name_with_type
     name_started = false
-    name_tokens.map do |token|
-      if token.type == :company_type && !name_started
-        token.value + ' '
-      elsif !name_started && \
-            token.type.in?([:occupation, :position, :citizenship, :location])
-        ''
-      elsif token.type != :open_quote
-        name_started = true
+    nominative_type = false
+    unknown_tokens = nil
+    name = name_tokens.each_with_index.map do |token, i|
+      if token.type == :company_type 
+        if !name_started
+          nominative_type = true
+          unknown_tokens ||= []
+          token.value + ' '
+        else
+          unknown_tokens ||= name_tokens.slice(0...i).select(&:unknown?)
+          token.matched
+        end
+      elsif token.type == :open_quote
+        token.matched
+      # elsif !name_started && token.adjective?
+      #   token.nominative_adjective
+      elsif token.type == :connector
         token.matched
       else
+        name_started = true
         token.matched
       end
     end.join('').strip
+    {
+      :name => name,
+      :nominative_type => nominative_type,
+      :unknown_tokens => unknown_tokens || []
+    }
+  end
+  memoize :full_name_with_type
+
+
+  def validate(title)
+    if unknown_tokens.present?
+      title.warn "Name contains unknown tokens"
+    end
+    title.warn "Possible inflection problems" unless full_name_with_type[:nominative_type]
   end
 
   def author
@@ -277,8 +322,8 @@ class AuthorParser
     person = authors.pop
     reset_author
     unless person.nil?
-      company.add_name_token(*person.name_tokens)
       company.add_tag_tokens(person.tag_tokens)
+      company.add_name_token(*(person.name_tokens - person.tag_tokens))
     end
   end
 

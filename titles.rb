@@ -40,7 +40,13 @@ module Authors
 
   (1..5).each do |i|
     define_method("author#{i}") do
-      authors[i - 1].try(:full_name)
+      authors[i - 1].try do |a|
+        if a.person?
+          a.full_name
+        else
+          'К: ' + a.full_name
+        end
+      end
     end
   end
 
@@ -146,7 +152,7 @@ class Title
       дело\sо\sвыдаче\s
       (привилегии[\p{p}\p{z}]+)?
       (?<duration>на\s\d+\s?(год|года|лет)\s)?
-      (привилегии[\p{p}\p{z}]+)?
+      (привилегии[\p{z}]+)?
       (?<subject>.*?)
       (\s|,|\.)(?:на)\s(?!\d+\s?(год|года|лет)\s)
       (?<object>.*?)
@@ -400,20 +406,24 @@ class Title
 
   def warn(msg)
     warnings << msg
+    warnings.uniq!
     self
   end
 
   def validate
     validate_line_count
     unless validate_parsed_title
-      validate_authors
       validate_subject_tokens
+      validate_authors
     end
   end
 
 
   def validate_authors
-    warn "No authors parsed" if authors.empty?
+    warn "Empty authors" if authors.empty? || authors.any?(&:empty?)
+    authors.each do |author|
+      author.validate(self)
+    end
     # warn "Suspicious author count" if authors.count > 3
   end
 
@@ -422,11 +432,32 @@ class Title
   end
 
   def validate_line_count
-    warn "Suspicious line count" unless lines.count.in? 2..4
+    # warn "Suspicious line count" unless lines.count.in? 2..4
   end
 
   def validate_parsed_title
     warn "Can't parse title" if title.present? && parsed_title.size == 0
+  end
+
+
+  A_CLASS = [
+    "Empty authors",
+    "Missing surname",
+    "Can't parse title",
+  ]
+  C_CLASS = ["Name contains unknown tokens", "Duplicated code"]
+
+  def warning_class
+    w = warnings
+    if w.empty?
+      nil
+    elsif (w & A_CLASS).present?
+      'A'
+    elsif (w - C_CLASS).empty?
+      'C'
+    else
+      'B'
+    end
   end
 
 
@@ -566,7 +597,7 @@ class Titles
       manual_title.warn "Unknown manual title"
       titles.push manual_title
     elsif indexes.many?
-      manual_title.warn "Other titles exist with same code"
+      manual_title.warn "Duplicated code"
       titles.push manual_title
     else
       titles[indexes.first] = manual_title
@@ -602,15 +633,19 @@ class Titles
   end
 
   def classified_titles
-    @classified_titles ||= classifier_examples.map do |example|
-      title = self[example.code]
-      if title.nil?
-        puts "Unknown example: #{example.code}"
-      else
-        title.category = example.category
+    @classified_titles ||=
+      begin
+        t_hash = titles.reject(&:is_manual).map{ |t| [t.code, t] }.to_h
+        classifier_examples.map do |example|
+          title = t_hash[example.code]
+          if title.nil?
+            puts "Unknown example: #{example.code}"
+          else
+            title.category = example.category
+          end
+          title
+        end.compact
       end
-      title
-    end.compact
   end
 
   def classify(classifier)
