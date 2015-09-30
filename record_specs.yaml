@@ -217,9 +217,7 @@
     - proper_name | Валаш
     - 'connector | , служащих в '
     - company_type | обществе  | Общество
-    - word | франко
-    - punct | -
-    - citizenship | русских  | Русский подданный
+    - 'word | франко-русских '
     - company_type | заводов | Завод
     - close_quote | »
     :duration: 
@@ -310,15 +308,15 @@
     - proper_name | Анзимирову
     :duration: "на 3 года"
     :authors_yaml:
-    - :full_name: "Н. Машковцевым "
+    - :full_name: "Н. Машковцев "
       :occupation:
       - "Горный инженер"
       :position:
       - "Статский советник"
-    - :full_name: "Н. Машковцевым "
+    - :full_name: "Н. Машковцев "
       :position:
       - "Потомственный почетный гражданин"
-    - :full_name: "И. Машковцевым "
+    - :full_name: "И. Машковцев "
     - :full_name: "В. Анзимиров "
       :location:
       - "Москва"
@@ -368,8 +366,7 @@
     - open_quote | «
     - proper_name | Сила
     - 'connector | , '
-    - 'word | анонимное '
-    - company_type | общество | Общество
+    - company_type | анонимное общество | Анонимное общество
     - close_quote | »
     :duration: 
     :authors_yaml:
@@ -453,10 +450,10 @@
     - 'initial | А. | А. '
     :duration: 
     :authors_yaml:
-    - :full_name: "Фаукам М. "
+    - :full_name: "Фаук М. "
       :citizenship:
       - "Иностранец"
-    - :full_name: "Фаукам А. "
+    - :full_name: "Фаук А. "
 - :input: |-
     Дело о выдаче привилегии на 5 лет иностранцам Г. и А. Бош на усовершенствования в ворсовальных машинах.
     10 февраля 1894.
@@ -496,14 +493,14 @@
     :object: "молоток для лечения насморка"
     :subject: "приписанному к г. Риге В. Шне"
     :subject_tokens_yaml:
-    - location | приписанному к г. Риге  | г. Риге
+    - location | приписанному к г. Риге  | Рига
     - 'initial | В. '
     - proper_name | Шне
     :duration: "на 5 лет"
     :authors_yaml:
     - :full_name: "В. Шне "
       :location:
-      - "г. Риге"
+      - "Рига"
 - :input: |-
     Дело о выдаче привилегии унтер-офицеру 39-го пехотного Тобольского полка М. Клекоту на втулку (шпунт) и кран для бочек по перевозке жидкостей.
     21 июня 1885 – 15 июля 1885.
@@ -519,9 +516,7 @@
     :subject: "унтер-офицеру 39-го пехотного Тобольского полка М. Клекоту"
     :subject_tokens_yaml:
     - position | унтер-офицеру  | Унтер-офицер
-    - word | 39
-    - punct | -
-    - 'word | го '
+    - 'word | 39-го '
     - 'word | пехотного '
     - 'proper_name | Тобольского '
     - 'word | полка '
@@ -696,7 +691,7 @@
     - company_type | Компании  | Компания
     - 'company_type_qualifier | с ограниченной ответственностью '
     - 'word | для '
-    - company_type | фабрикации  | Фабрика
+    - 'word | фабрикации '
     - 'word | якорей '
     - 'word | по '
     - 'word | патенту '
@@ -825,11 +820,11 @@
     - 'proper_name | Мёрфи '
     - 'initial | Д. | Д. '
     - 'initial | М. | М. '
-    - punct | -
-    - 'initial | Л. | Л. '
+    - word | -Л
+    - punct | .
     :duration: 
     :authors_yaml:
-    - :full_name: "Л. "
+    - :full_name: "Мёрфи Д. М. "
       :citizenship:
       - "Иностранец"
 - :input: |-
@@ -876,15 +871,12 @@
     :subject_tokens_yaml:
     - citizenship | иностранной  | Иностранец
     - open_quote | «
-    - 'proper_name | Соединенной '
-    - 'word | свинцовой '
-    - 'connector | и '
-    - 'word | масляной '
-    - company_type | компании | Компания
+    - company_type | Соединенной свинцовой и масляной компании | Соединенная свинцовая
+      и масляная компания
     - close_quote | »
     :duration: 
     :authors_yaml:
-    - :full_name: "«Соединенной свинцовой и масляной компании»"
+    - :full_name: "«Соединенная свинцовая и масляная компания »"
       :citizenship:
       - "Иностранец"
 - :input: |-
@@ -922,14 +914,11 @@
     :date_range: 24 августа 1888 – 6 ноября 1889
     :end_year: '1889'
     :object: "способ выделки головок на шурупах"
-    :subject: "Американской винтовой компании»"
+    :subject: "«Американской винтовой компании»"
     :subject_tokens_yaml:
-    - citizenship | Американской  | Американский подданный
-    - 'word | винтовой '
-    - company_type | компании | Компания
+    - open_quote | «
+    - company_type | Американской винтовой компании | Американская винтовая компания
     - close_quote | »
     :duration: "на 10 лет"
     :authors_yaml:
-    - :full_name: "винтовой компании»"
-      :citizenship:
-      - "Американский подданный"
+    - :full_name: "«Американская винтовая компания »"

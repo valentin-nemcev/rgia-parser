@@ -65,6 +65,7 @@ occupations = %w{
   Архитектор
   Врач
   Кандидат
+  Фабрикант
 }.map do |occupation|
   key = Lingua.stemmer(occupation, :language => :ru)
   key = Unicode::downcase(key)
@@ -77,6 +78,7 @@ multiwords = [
   'Зубной врач',
 
   'Горный инженер',
+  'Гражданский инженер',
   'Инженер путей сообщения',
 
   'Оружейный мастер',
@@ -197,18 +199,64 @@ end + [
   [r, proc { s }]
 end
 
+locations = %w{
+  Англия
+  Баку
+  Бахчисарай
+  Берлин
+  Варшава
+  Венден
+  Вена
+  Волоковышки
+  Гельсингфорс
+  Германия
+  Екатеринбург
+  Екатеринославль
+  Занза
+  Калима
+  Керенск
+  Либава
+  Лодзи
+  Минск
+  Митава
+  Одесса
+  Париж
+  Рига
+  Рига
+  Санкт-петербург
+  Саратов
+  Симферополь
+  Сосновая
+  Тарус
+  Туккума
+  Харьков
+  Ченстохова
+  Шуи
+  Ямбург
+}.map { |location|
+  key = Lingua.stemmer(location, :language => :ru)
+  key = Unicode::downcase(key)
+  [key, location]
+}.to_h
+
+lemmatize_location = lambda do |location|
+  key = Lingua.stemmer(location, :language => :ru)
+  key = Unicode::downcase(key)
+  locations.fetch(key, location)
+end
+
 LOCATIONS = [
   [
-    /в (городe|гор.|г.|д. )?(?<name>\p{lu}\p{ll}+)\s*/,
-    proc { |m| m.matched }
+    /в (городe|гор.|г.|д. )?(?<name>\p{lu}[\p{alpha}\p{pd}&&[^\w]]+)\s*/,
+    proc { |m| lemmatize_location.call(m[:name]) }
   ],
   [
     /(гражданин\p{alpha}|жител\p{alpha}+|приписанн\p{alpha}+ к) (города|гор.|г.|д.) (?<name>\p{lu}\p{ll}+)\s*/i,
-    proc { |m| 'г. ' + Unicode::capitalize(m[:name]) }
+    proc { |m| lemmatize_location.call(m[:name]) }
   ],
   [
     /(?<name>\p{lu}\p{ll}+) губернии\s*/i,
-    proc { |m| Unicode::capitalize(m[:name]) + ' губернии' }
+    proc { |m| Unicode::capitalize(m[:name].sub(/ой$/, 'ая')) + ' губерния' }
   ],
   [
     /(санкт[ \p{Pd}]*)?петербургск\p{alpha}+\s*/i,
@@ -218,7 +266,53 @@ LOCATIONS = [
 ]
 
 
+
 COMPANY_TYPES = [
+  'Анонимное общество',
+  'Электрическая компания',
+  'Американская компания',
+  'Электрическое общество',
+  'Национальная компания',
+  'Генеральная компания',
+  'Генеральное общество',
+  'Генеральная электрическая компания',
+  'Промышленное общество',
+  'Машиностроительный завод',
+  'Континентальная спичечная компания',
+  'Нью-Йоркская компания',
+  'Американская винтовая компания',
+  'Универсальная компания',
+  'Германское акционерное общество',
+  'Соединенная свинцовая и масляная компания',
+  'Телефонное товарищество',
+  'Французское общество',
+  'Всеобщему общество',
+  'Всеобщая компания',
+  'Французская компания',
+  'Континентальная компания',
+  'Континентальное общество',
+  'Гражданское общество',
+
+  'Торговое общество',
+  'Акционерная компания',
+  'Телеграфная компания',
+  'Швейцарское общество',
+  'Отделение акционерного общества',
+  'Акционерное металлургическое общество',
+  'Фабричная компания',
+  'Германское общество',
+  'Вифлеемская стальная компания',
+  'Вервистекое общество',
+  'Американская всеобщей компания',
+  'Котельный завод',
+  'Соединенное акционерное общество',
+  'Русское общество',
+  'Новое общество',
+  'Механический завод',
+  'Правление общества',
+  'Соединенная компания',
+  'Новое немецкое общество',
+
   'Товарищество',
   'Торговый дом',
   'Банкирский дом',
@@ -232,11 +326,12 @@ COMPANY_TYPES = [
   'Патентное бюро',
   'Синдикат',
   'Завод',
-  'Фабрика',
   'Управление',
 ].map do |o|
   [stem_and_join.call(o), proc { o }]
 end
+
+COMPANY_TYPES << [/фабрик\p{alpha}{,2}(\s+|$)/i, proc { 'Фабрика' }]
 
 COMPANY_TYPE_QUALIFIERS = [
   [/с ограниченной ответственностью\s*/i, :matched.to_proc],
@@ -271,12 +366,12 @@ end
 
 
 TOKENS = ActiveSupport::OrderedHash[
+  :company_type, COMPANY_TYPES,
+  :company_type_qualifier, COMPANY_TYPE_QUALIFIERS,
   :occupation  , OCCUPATIONS ,
   :position    , POSITIONS   ,
   :citizenship , CITIZENSHIPS,
   :location    , LOCATIONS   ,
-  :company_type, COMPANY_TYPES,
-  :company_type_qualifier, COMPANY_TYPE_QUALIFIERS,
   :duration, [
     [/с продлением срока действия до ((\d+) (год|года|лет))\s*/,
     proc {|m| m[1]}]
@@ -288,7 +383,7 @@ TOKENS = ActiveSupport::OrderedHash[
     [/\p{Pf}\s*/, :matched.to_proc]
   ],
   :initial, [
-    [/\p{L}\p{Ll}?[,.]\s*/, proc { |m| Unicode::upcase(m.matched).strip + ' ' }],
+    [/\p{L}\p{Ll}?[,.]\s*/, proc { |m| Unicode::capitalize(m.matched).strip + ' ' }],
     [/[\p{lu}&&[^И]]($|\s+)/, proc { |m| m.matched.strip + '. ' }]
   ],
   :proper_name, PROPER_NAMES,
@@ -315,7 +410,7 @@ class SubjectTokenizer
             end
           end
         end
-        if scanner.scan(/\p{word}+\s*/)
+        if scanner.scan(/[\p{Pd}\p{word}]+\s*/)
           tokens << Token.new(:word, scanner.matched)
           throw :next, true
         end
@@ -357,6 +452,10 @@ class Token
 
   def adjective?
     @matched.match(/^\p{word}{3,}(ому|ой)\s*$/i)
+  end
+
+  def suspicious?
+    unknown? && (type == :punct || matched.match(/год|лет|привелег/))
   end
 
   def nominative_adjective

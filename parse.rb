@@ -257,7 +257,7 @@ class Parser
         .select{ |t| t.warnings.include? "Name contains unknown tokens" }
         .select do |t|
           t.authors.flat_map(&:unknown_tokens).map(&:matched)
-            .any?{ |w| w.match(/^гражданин/i) }
+            .any?{ |w| w.match(/^(привилег)/i) }
         end
         .map(&:to_spec).to_yaml
     )
@@ -359,31 +359,44 @@ class Parser
 
 
   def print_subject_stats
-   unknown_tokens = titles
-      .flat_map{ |t|
-        t.authors.flat_map{ |a|
-          a.unknown_tokens
-        }
-      }
 
-  stemmer = Lingua::Stemmer.new(:language => "ru")
-  count = unknown_tokens
-    .map(&:matched)
-    .map do |s|
-      s.strip
-        .sub(/^[\p{lu}&&[^И]]$/, '[Initial]')
-        .sub(/^\p{word}{3,}(ому|ой)$/i, '[Adjective]')
-    end
-    .map { |w| stemmer.stem(Unicode.downcase(w)) }
-    .each_with_object(Hash.new(0)) { |w, c| c[w] += 1}
+    # prefix_counts = titles.invalid_titles
+    #   .reject(&:is_manual)
+    #   .flat_map(&:authors).reject(&:person?)
+    #   .map{ |c|
+    #     prefix = c.unknown_tokens_with_type.map(&:matched).join('')
+    #     prefix = Unicode::downcase(prefix)
+    #     prefix.sub(/^«/, '').strip
+    #   }
+    #   .reject(&:empty?)
+    #   .each_with_object(Hash.new(0)) { |w, c| c[w] += 1}
 
-  print_count count
+    # print_count prefix_counts
 
-   # puts titles.select{ |t| (t.subject || '').match(/иностранке|гражданке/) }
-   #    .each{ |t|
-   #      puts t.to_spec.to_yaml;
-   #    }
-   #    .count.to_s
+    # unknown_tokens = titles
+    #     .flat_map{ |t|
+    #       t.authors.flat_map{ |a|
+    #         a.unknown_tokens
+    #       }
+    #     }
+
+    # stemmer = Lingua::Stemmer.new(:language => "ru")
+    # count = unknown_tokens
+    #   .map(&:matched)
+    #   .map do |s|
+    #     s.strip
+    #       .sub(/^[\p{lu}&&[^И]]$/, '[Initial]')
+    #       # .sub(/^\p{word}{3,}(ому|ой)$/i, '[Adjective]')
+    #   end
+    #   .map { |w| stemmer.stem(Unicode.downcase(w)) }
+    #   .each_with_object(Hash.new(0)) { |w, c| c[w] += 1}
+
+    # print_count count
+
+    location_count = titles.flat_map(&:location)
+      .reject{ |l| l.match('губерния') }
+      .each_with_object(Hash.new(0)) { |w, c| c[w] += 1}
+    print_count location_count, :all
 
   end
 
@@ -430,9 +443,13 @@ class Parser
     print_count count
   end
 
-  def print_count(count)
-    count.to_a.sort_by(&:second).reverse.take(50)
+  def print_count(count, limit = 25)
+    limit = count.length if limit == :all
+    count.to_a.sort_by(&:second).reverse.take(limit)
       .each { |t, v| puts [t, v].join(': ') }
+
+    count = count.flat_map(&:second).count
+    puts "Total: #{count}"
   end
 end
 
@@ -480,7 +497,7 @@ parser.read_classifier_examples
 parser.read_titles()
 parser.write_specs(spec_titles)
 parser.read_manual_titles_xls()
-# parser.evaluate_classifier
+parser.evaluate_classifier
 parser.classify
 
 # parser.write_spec_sample(666)

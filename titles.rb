@@ -185,6 +185,7 @@ class Title
       next if m.nil?
       return m.to_h.tap do |h|
         h[:subject] += h[:subject_company] if h[:subject_company].present?
+        h[:irregular_title] if i > 0
       end
     end
     return {}
@@ -199,6 +200,10 @@ class Title
     parsed_title[:object].try{ |t| t.gsub(/s+/, ' ')}
   end
   memoize :object
+
+  def irregular_title?
+    parsed_title[:irregular_title]
+  end
 
   def duration
     parsed_title[:duration].try{ |t| t.strip }
@@ -429,6 +434,7 @@ class Title
 
   def validate_subject_tokens
     warn "Subject not fully parsed" if subject_tokens.detect{ |t| t.type == :rest }
+    warn "Possible inflection problems" if irregular_title?
   end
 
   def validate_line_count

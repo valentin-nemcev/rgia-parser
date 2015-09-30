@@ -20,7 +20,7 @@ end
 
 
 class Person < Author
-  attr_accessor :initials_before_surname
+  attr_accessor :initials_before_surname, :reused_name_tokens
   attr_reader :name_tokens
 
   def person?
@@ -44,13 +44,13 @@ class Person < Author
   end
 
   def insert_name_tokens_before_initials(tokens)
-    @reused_name_tokens = true
+    self.reused_name_tokens = true
     i = name_tokens.index(name_chunk.first)
     name_tokens.insert(i, *tokens) unless i.nil?
   end
 
   def insert_name_tokens_after_initials(tokens)
-    @reused_name_tokens = true
+    self.reused_name_tokens = true
     i = name_tokens.index(name_chunk.last) + 1
     name_tokens.insert(i, *tokens) unless i.nil?
   end
@@ -91,6 +91,10 @@ class Person < Author
   end
 
   def lemmatize(surname)
+    if reused_name_tokens
+      nom = surname.sub(/(ам|ым) $/, ' ').sub(/ким $/, 'кий ')
+      return nom if nom != surname
+    end
     @petrovich ||= Petrovich.new(:male )
     surname.strip.split('-').map do |s|
       if s.size <= 2
@@ -110,12 +114,12 @@ class Person < Author
         .map do |t|
           value = t == surname_word ? Unicode::capitalize(t.value) : t.value
           value = t.type != :initial ? lemmatize(value) : value
-          Token.new(t.type == :initial ? :initial : :proper_name, nil, value)
+          Token.new(t.type == :initial ? :initial : :proper_name, value, value)
         end
     else
       name_chunk.map do |t|
         value = t.type != :initial ? lemmatize(t.value) : t.value
-        Token.new(t.type, nil, value)
+        Token.new(t.type, value, value)
       end
     end
   end
@@ -133,6 +137,7 @@ class Person < Author
 
     if prev_author.initials_after_surname?
       self.insert_name_tokens_before_initials(prev_author.proper_name_tokens)
+      prev_author.reused_name_tokens = true
     end
   end
 
@@ -141,16 +146,20 @@ class Person < Author
 
     if next_author.initials_before_surname?
       self.insert_name_tokens_after_initials(next_author.proper_name_tokens)
+      next_author.reused_name_tokens = true
     end
   end
 
 
   def validate(title)
-    if unknown_tokens.present?
-      title.warn "Name contains unknown tokens"
+    if unknown_tokens.select(&:suspicious?).present?
+      title.warn "Name contains suspicious unknown tokens"
     end
 
-    title.warn "Possible inflection problems" if @reused_name_tokens
+    if full_name_tokens.select{ |t| t.type == :proper_name }.any?(&:adjective?)
+      title.warn "Suspicious surname"
+    end
+    # title.warn "Possible inflection problems" if reused_name_tokens
     if name_chunk.chunk(&:type).count > 2
       title.warn "Suspicious initial ordering"
     end
@@ -214,22 +223,27 @@ class Company < Author
   end
 
   def unknown_tokens
-    full_name_with_type[:unknown_tokens]
+    full_name_with_type[:unknown_tokens_with_type]
+      .slice(0...-1).select(&:unknown?)
+  end
+
+  def unknown_tokens_with_type
+    full_name_with_type[:unknown_tokens_with_type]
   end
 
 
   def full_name_with_type
     name_started = false
     nominative_type = false
-    unknown_tokens = nil
+    unknown_tokens_with_type = nil
     name = name_tokens.each_with_index.map do |token, i|
       if token.type == :company_type 
         if !name_started
           nominative_type = true
-          unknown_tokens ||= []
+          unknown_tokens_with_type ||= []
           token.value + ' '
         else
-          unknown_tokens ||= name_tokens.slice(0...i).select(&:unknown?)
+          unknown_tokens_with_type ||= name_tokens.slice(0..i)
           token.matched
         end
       elsif token.type == :open_quote
@@ -246,16 +260,17 @@ class Company < Author
     {
       :name => name,
       :nominative_type => nominative_type,
-      :unknown_tokens => unknown_tokens || []
+      :unknown_tokens_with_type => unknown_tokens_with_type || []
     }
   end
   memoize :full_name_with_type
 
 
   def validate(title)
-    if unknown_tokens.present?
-      title.warn "Name contains unknown tokens"
+    if unknown_tokens.select(&:suspicious?).present?
+      title.warn "Name contains suspicious unknown tokens"
     end
+
     title.warn "Possible inflection problems" unless full_name_with_type[:nominative_type]
   end
 

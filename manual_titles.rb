@@ -202,8 +202,15 @@ class ManualTitle
 
 
   (1..5).each do |i|
-    define_method("author#{i}=") do |author|
-      authors.push ManualPerson.new(author) if author.present?
+    define_method("author#{i}=") do |author_str|
+      if author_str.present?
+        author = if author_str.match(/^К:/)
+          ManualCompany.new(author_str.sub(/^К:\s*/, ''))
+        else
+          ManualPerson.new(author_str)
+        end
+        authors.push author if author.present?
+      end
     end
   end
 
@@ -231,6 +238,7 @@ class ManualTitle
 
   def warn(msg)
     warnings << msg
+    warnings.uniq!
     self
   end
 
