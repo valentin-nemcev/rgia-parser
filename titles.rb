@@ -1,6 +1,8 @@
 require 'active_support'
 require 'active_support/core_ext'
 
+require 'pp'
+
 require 'memoist'
 
 require 'strscan'
@@ -321,6 +323,7 @@ class Title
   end
 
   def classified_correctly?
+    return false if @category.nil?
     @category == classifier_category
   end
 
@@ -641,30 +644,39 @@ class Titles
   def classified_titles
     @classified_titles ||=
       begin
-        t_hash = titles.reject(&:is_manual).map{ |t| [t.code, t] }.to_h
-        classifier_examples.map do |example|
+        t_hash = titles.map{ |t| [t.code, t] }.to_h
+        examples = classifier_examples.map do |example|
           title = t_hash[example.code]
           if title.nil?
             puts "Unknown example: #{example.code}"
+            nil
+          elsif title.is_manual
+            puts "Already classified: #{example.code}"
+            nil
           else
             title.category = example.category
+            title
           end
-          title
         end.compact
+        examples
       end
   end
 
   def classify(classifier)
     classifier.train(classified_titles)
+    titles.each{ |t| t.category.try{ |c| c.set_parents(classifier_categories) } }
     classified = Parallel.map(titles, :progress => "Classifying") do |title|
       classifier.classify(title) if title.needs_classification?
       title
     end
     titles.replace classified
-    titles.each{ |t| t.category.try{ |c| c.set_parents(classifier_categories) } }
   end
 
   def evaluate_classifier(classifier)
+    classifier_categories.each do |n, cat|
+      cat.set_parents(classifier_categories)
+    end
+    titles.each{ |t| t.category.try{ |c| c.set_parents(classifier_categories) } }
     control_ratio = 0.3
     train, control = classified_titles.partition{ rand > control_ratio }
     classifier.train(train)
@@ -675,6 +687,7 @@ class Titles
     correct = control.count(&:classified_correctly?)
     correct_p = (correct.to_f/control.size).round(2) * 100
     puts "Correctly classified records #{correct_p}%"
+    # pp classifier_categories
   end
 
   def invalid_titles
@@ -691,11 +704,17 @@ class Titles
   end
 
   def categories_stats
-    s = Hash.new(0)
-    classifier_categories.values.each { |cat| s[cat] = 0 }
+    s = Hash.new
     titles
-      .map{ |t| t.category || Category.nil_category }
-      .each { |cat| s[cat] += 1 }
+    .each do |t|
+      cat = t.category || Category.nil_category
+      s[cat] ||= [0, 0]
+      if t.needs_classification?
+        s[cat][1] += 1
+      else
+        s[cat][0] += 1
+      end
+    end
     s.to_a
   end
 

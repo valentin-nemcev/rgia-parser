@@ -19,8 +19,12 @@ class Category
     @title = title
   end
 
+  def ==(other)
+    other.present? && number == other.number
+  end
+
   def eql?(other)
-    number == other.number
+    other.present? && number == other.number
   end
 
   def hash
@@ -85,24 +89,43 @@ end
 
 class Classifier
 
-  def nbc
-    @nbc ||= StuffClassifier::Bayes.new('titles', :language => 'ru').tap do |nbc|
-      nbc.tokenizer.preprocessing_regexps = []
-      nbc.tokenizer.ignore_words = []
+  def create_nbc(name)
+    StuffClassifier::Bayes.new(name, :language => 'ru').tap do |nbc|
+      tokenizer = nbc.tokenizer
+      tokenizer.preprocessing_regexps = []
+      tokenizer.ignore_words = []
+      def tokenizer.each_word(string)
+        words = []
+        string
+          .split(/[^\p{word}]+/)
+          .reject(&:blank?)
+          .map { |w| Unicode.downcase(@stemmer.stem(w)) }
+          .each{ |w| words << (block_given? ? (yield w) : w) }
+        return words
+      end
     end
+  end
+
+  def nbc
+    @nbc ||= create_nbc('titles')
+  end
+
+  def top_nbc
+    @top_nbc ||= create_nbc('titles_top')
   end
 
   def train(examples)
     examples.each do |example|
       next if example.category.nil? || example.object.nil?
       nbc.train(example.category, example.object)
+      top_nbc.train(example.category.with_parents.first, example.object)
     end
   end
 
   def classify(title)
-    length = nbc.tokenizer.each_word(title.object).length
+    # length = top_nbc.tokenizer.each_word(title.object).length
     title.category_scores = nbc.cat_scores(title.object).map do |cat, score|
-      [cat, score * length]
+      [cat, score]
     end
   end
 

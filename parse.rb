@@ -202,11 +202,13 @@ class Parser
       end
 
     categories = book.create_worksheet :name => 'Отрасли производства'
-    categories.row(0).replace ['Номер', 'Отрасль', 'Кол-во записей']
+    categories.row(0).replace([
+      'Номер', 'Отрасль', 'Кол-во записей (р)', 'Кол-во записей (а)', 'Кол-во записей'
+    ])
     titles.categories_stats.each_with_index do |cat_count, i|
       category, count = cat_count
       categories.row(i + 1).replace(
-        [category.number, category.title, count]
+        [category.number, category.title, count.first, count.second, count.sum]
       )
     end
     auto_width(categories.column(1))
@@ -503,8 +505,8 @@ parser.classify
 # parser.write_spec_sample(666)
 parser.write_xls
 # parser.write_yaml_with_warnings
-parser.write_xls_final
-parser.print_warnings
+# parser.write_xls_final
+# parser.print_warnings
 # parser.print_citizenship_stats
 # parser.write_yaml_by_author_stat
 # parser.print_subject_stats
