@@ -112,6 +112,10 @@ class ManualTitle
     'Да'
   end
 
+  def full_str
+    title
+  end
+
 
   CITIZENSHIPS = Hash[
     '1.2.1' => 'Великобританский подданный',

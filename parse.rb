@@ -179,6 +179,16 @@ class Parser
     (0...Title::FIELDS.length).each { |i| auto_width(worksheet.column(i)) }
   end
 
+  def write_xls_sample(seed)
+    puts 'Writing out/records_sample.xls'
+    book = Spreadsheet::Workbook.new
+
+    records = book.create_worksheet :name => 'Выборка'
+    sample = titles.sample(500, random: Random.new(seed))
+    write_titles_xls(sample, records)
+    book.write 'out/records_sample.xls'
+  end
+
   def write_xls
     puts 'Writing out/records.xls'
     book = Spreadsheet::Workbook.new
@@ -499,10 +509,11 @@ parser.read_classifier_examples
 parser.read_titles()
 parser.write_specs(spec_titles)
 parser.read_manual_titles_xls()
-parser.evaluate_classifier
+# parser.evaluate_classifier
 parser.classify
 
 # parser.write_spec_sample(666)
+parser.write_xls_sample(666)
 parser.write_xls
 # parser.write_yaml_with_warnings
 # parser.write_xls_final

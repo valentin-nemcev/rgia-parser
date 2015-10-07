@@ -496,7 +496,7 @@ class Title
     :date_range   , 'Крайние даты'         ,
     :end_year     , 'Дата окончания'       ,
     :code         , 'Архивный шифр'        ,
-    :title        , 'Заголовок'            ,
+    :full_str     , 'Заголовок'            ,
     :warnings_s   , 'Проблемы'             ,
   ]
 
@@ -606,8 +606,22 @@ class Titles
       manual_title.warn "Unknown manual title"
       titles.push manual_title
     elsif indexes.many?
-      manual_title.warn "Duplicated code"
-      titles.push manual_title
+      manual_title.warn "Duplicated code (manual)"
+      indexes.each do |i|
+        matched = false
+        if titles[i].is_manual
+          if titles[i].title.include?(manual_title.title)
+            matched = true
+          elsif manual_title.title.include?(titles[i].title)
+            titles[i] = manual_title
+            matched = true
+          end
+        elsif titles[i].full_str.include? manual_title.title
+          titles[i] = manual_title
+          matched = true
+        end
+        break if matched
+      end
     else
       titles[indexes.first] = manual_title
     end
