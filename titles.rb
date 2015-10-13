@@ -101,10 +101,18 @@ module FinalFields
   def notes
   end
 
+  def citizenship_with_parents
+    unless citizenship[0].in? ['Российский подданный', 'Иностранец']
+      ['Иностранец', *citizenship]
+    else
+      citizenship
+    end
+  end
+
   def tags_str
     ((category.try(:with_parents) || []).map(&:to_s) \
-     + citizenship + position + occupation + location)
-      .join(',~')
+     + citizenship_with_parents + position + occupation + location)
+      .join(',~ ')
   end
 
   EMPTY_AUTHOR = Person.new()
@@ -143,7 +151,6 @@ class Title
     @full_str ||= @lines.join("\n").squeeze(' ')
   end
   memoize :full_str
-
 
 
   # Parsed title
@@ -256,7 +263,7 @@ class Title
   CODE_REGEX = /^(ргиа\.?\s*)?ф\.?\s*\d+ .*? $/xi
 
   CERT_NUM_PARENS_REGEX = /
-    (?:\()? \s* (?:привилегия|патент) \s? [^\s]? \s? (\d+) \s* (?:\))?[\s.]*
+    (?:\()? \s* (?:приложение|привилеги[яи]|патент) \s? (?:3\s|[^\p{word}\s]{,2}) \s? (\d+[\d\s,\p{pd}]*) \s* (?:\))?[\s.]*
   /xi
 
   def parsed_str
@@ -274,7 +281,7 @@ class Title
     end
 
     str.gsub!(CERT_NUM_PARENS_REGEX) do |m|
-      result[:cert_num] = Regexp.last_match[1]
+      result[:cert_num] = Regexp.last_match[1].strip
       ''
     end
 
@@ -613,16 +620,19 @@ class Titles
           if titles[i].title.include?(manual_title.title)
             matched = true
           elsif manual_title.title.include?(titles[i].title)
+            manual_title.full_str = titles[i].full_str
             titles[i] = manual_title
             matched = true
           end
         elsif titles[i].full_str.include? manual_title.title
+          manual_title.full_str = titles[i].full_str
           titles[i] = manual_title
           matched = true
         end
         break if matched
       end
     else
+      manual_title.full_str = titles[indexes.first].full_str
       titles[indexes.first] = manual_title
     end
   end
@@ -665,7 +675,7 @@ class Titles
             puts "Unknown example: #{example.code}"
             nil
           elsif title.is_manual
-            puts "Already classified: #{example.code}"
+            # puts "Already classified: #{example.code}"
             nil
           else
             title.category = example.category
@@ -709,6 +719,12 @@ class Titles
       .group_by(&:code).map(&:second).reject(&:one?).flatten
       .each{ |t| t.warn "Duplicated code" }
     titles.reject(&:valid?)
+  end
+
+  def incomplete
+    titles.select do |t|
+      t.full_str.match(/([^\p{alnum}])\1{2,}|[?_]/)
+    end
   end
 
   def with_worst_category_scores(n)

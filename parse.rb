@@ -196,6 +196,10 @@ class Parser
     records = book.create_worksheet :name => 'Все записи'
     write_titles_xls(titles, records)
 
+    incomplete_records = book.create_worksheet :name => 'С пропусками'
+    write_titles_xls(titles.incomplete, incomplete_records)
+
+
     # titles
     #   .group_by(&:author_stat)
     #   .to_a.sort_by(&:first)
@@ -510,10 +514,10 @@ parser.read_titles()
 parser.write_specs(spec_titles)
 parser.read_manual_titles_xls()
 # parser.evaluate_classifier
-parser.classify
+# parser.classify
 
 # parser.write_spec_sample(666)
-parser.write_xls_sample(666)
+# parser.write_xls_sample(666)
 parser.write_xls
 # parser.write_yaml_with_warnings
 # parser.write_xls_final

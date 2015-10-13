@@ -101,6 +101,7 @@ class Person < Author
         s
       else
         nom = @petrovich.lastname(s, :nominative, :dative)
+        nom.sub!(/ок$/, 'к')
         nom[-1, 1] == 'я' ? s : nom
       end
     end.join('-') + ' '

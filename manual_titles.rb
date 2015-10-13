@@ -23,11 +23,11 @@ class ManualPerson
   end
 
   def author
-    full_name.split(' ', 2).first
+    full_name.split(/\s+/).select{ |w| w.length > 2 }.join(' ')
   end
 
   def author_initials
-    full_name.split(' ', 2).second
+    full_name.split(/\s+/).reject{ |w| w.length > 2 }.join(' ')
   end
 
 end
@@ -113,7 +113,15 @@ class ManualTitle
   end
 
   def full_str
-    title
+    @full_str || title
+  end
+
+  def full_str=(str)
+    @full_str = str
+  end
+
+  def incomplete?
+    false
   end
 
 
